@@ -113,7 +113,8 @@ const initialJson = JSON.stringify(initialHabits).replace(/</g, '\\u003c');
 
       <!-- Add habit (toggled by the + in the header) -->
       <form id="habit-form" class="mb-6 hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div class="flex items-center gap-2">
+        <div class="flex items-start gap-2">
+          <!-- Leading emoji tile (fixed-width rail); the pencil badge lives over it -->
           <div class="relative shrink-0">
             <input id="habit-emoji" name="emoji" maxlength="2" value="✅" aria-label="Emoji, tap to change" title="Tap to change the emoji" readonly
               class="h-11 w-12 cursor-pointer rounded-xl border border-slate-200 bg-slate-50 text-center text-xl outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-800" />
@@ -124,22 +125,28 @@ const initialJson = JSON.stringify(initialHabits).replace(/</g, '\\u003c');
               <div id="emoji-grid" class="grid grid-cols-6 gap-1"></div>
             </div>
           </div>
-          <input id="habit-name" name="name" placeholder="e.g. Morning run" autocomplete="off" required
-            class="h-11 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-800" />
-          <button type="submit" id="habit-submit"
-            class="h-11 shrink-0 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 active:scale-95">Add</button>
-        </div>
-        <div id="color-picker" class="mt-3 flex flex-wrap justify-center gap-2"></div>
-        <div class="mt-4">
-          <p class="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">How often?</p>
-          <div class="flex items-center justify-between gap-2">
-            <div id="freq-seg" class="flex gap-1.5"></div>
-            <button type="button" id="habit-close" aria-label="Close" title="Close"
-              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200">
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-            </button>
+          <!-- Content spine: input, colors, and frequency all share this left edge -->
+          <div class="min-w-0 flex-1">
+            <div class="flex gap-2">
+              <input id="habit-name" name="name" placeholder="e.g. Morning run" autocomplete="off" required
+                class="h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-800" />
+              <button type="submit" id="habit-submit"
+                class="h-11 shrink-0 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 active:scale-95">Add</button>
+            </div>
+
+            <p class="mb-1.5 mt-5 text-xs font-medium text-slate-500 dark:text-slate-400">Color</p>
+            <div id="color-picker" class="flex flex-wrap gap-2"></div>
+
+            <p class="mb-1.5 mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">How often?</p>
+            <div class="flex items-center justify-between gap-2">
+              <div id="freq-seg" class="flex gap-1.5"></div>
+              <button type="button" id="habit-close" aria-label="Close" title="Close"
+                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div id="freq-days" class="mt-2 hidden flex-wrap gap-1.5"></div>
           </div>
-          <div id="freq-days" class="mt-2 hidden flex-wrap gap-1.5"></div>
         </div>
       </form>
 
@@ -573,15 +580,18 @@ const initialJson = JSON.stringify(initialHabits).replace(/</g, '\\u003c');
       // ---- add habit ---------------------------------------------------------
       let selectedColor = 'emerald';
       const picker = document.getElementById('color-picker');
+      // selected = a ring in the swatch's own color with a white (theme-aware) gap
+      const SWATCH_SEL = ['scale-110', 'ring-2', 'ring-offset-2', 'ring-offset-white', 'dark:ring-offset-slate-900'];
       picker.innerHTML = Object.entries(COLORS).map(([name, hex]) => `
         <button type="button" data-color="${name}" aria-label="${name}"
-          class="h-7 w-7 rounded-full border-2 transition ${name === selectedColor ? 'scale-110 border-slate-400 dark:border-white' : 'border-transparent'}"
-          style="background:${hex}"></button>`).join('');
+          class="h-7 w-7 rounded-full transition ${name === selectedColor ? SWATCH_SEL.join(' ') : ''}"
+          style="background:${hex};--tw-ring-color:${hex}"></button>`).join('');
       function setColor(name) {
         selectedColor = name;
-        [...picker.children].forEach((c) =>
-          c.className = c.className.replace(/scale-110 border-slate-400 dark:border-white|border-transparent/g,
-            c.dataset.color === selectedColor ? 'scale-110 border-slate-400 dark:border-white' : 'border-transparent'));
+        [...picker.children].forEach((c) => {
+          const on = c.dataset.color === selectedColor;
+          SWATCH_SEL.forEach((cls) => c.classList.toggle(cls, on));
+        });
       }
       picker.addEventListener('click', (e) => {
         const b = e.target.closest('[data-color]');
