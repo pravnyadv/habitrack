@@ -1,0 +1,644 @@
+---
+import '../styles/global.css';
+// No server-side data fetch: the app is passcode-gated and loads habits
+// client-side (with the passcode header) so the HTML never contains data.
+const today = new Date().toLocaleDateString('en-US', {
+  weekday: 'long', month: 'long', day: 'numeric',
+});
+---
+
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Habitrack — build better habits</title>
+    <meta name="description" content="A simple, beautiful habit tracker." />
+    <meta name="robots" content="noindex, nofollow" />
+
+    <!-- PWA / iOS home-screen -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Habitrack" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#020617" media="(prefers-color-scheme: dark)" />
+    <script is:inline>
+      // Apply theme before paint to avoid flash
+      const t = localStorage.getItem('theme');
+      if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      }
+    </script>
+  </head>
+  <body class="h-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans antialiased">
+
+    <!-- Passcode gate: covers everything until unlocked (passcode saved in localStorage) -->
+    <div id="gate" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-50 px-6 dark:bg-slate-950">
+      <div class="w-full max-w-xs text-center">
+        <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500 text-3xl shadow-sm">🦫</div>
+        <h1 class="text-lg font-bold">Habitrack</h1>
+        <p class="mt-1 mb-5 text-sm text-slate-500 dark:text-slate-400">Enter your passcode to continue</p>
+        <form id="gate-form">
+          <input id="gate-input" type="password" inputmode="text" autocomplete="current-password"
+            placeholder="Passcode" aria-label="Passcode"
+            class="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-center text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
+          <p id="gate-error" class="mt-2 hidden text-xs font-medium text-rose-500">Wrong passcode — try again.</p>
+          <button type="submit"
+            class="mt-4 h-11 w-full rounded-xl bg-emerald-500 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 active:scale-95">Unlock</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="mx-auto max-w-2xl px-4 pb-24 pt-8 sm:pt-12">
+
+      <!-- Header -->
+      <header class="mb-8 flex items-center justify-between">
+        <div>
+          <h1 class="flex items-center gap-2 text-2xl font-bold tracking-tight">
+            <span class="text-3xl">🦫</span> Habitrack
+            <button id="add-btn" aria-label="New habit" title="New habit"
+              class="ml-1 flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm transition hover:bg-emerald-600 active:scale-90">
+              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2.4" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+            </button>
+          </h1>
+          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{today}</p>
+        </div>
+        <button id="theme-toggle" aria-label="Toggle theme"
+          class="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
+          <svg class="hidden h-5 w-5 dark:block" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>
+          <svg class="block h-5 w-5 dark:hidden" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>
+        </button>
+      </header>
+
+      <div id="load-error" class="mb-6 hidden rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300">
+        Couldn't reach the server. Check your connection and reload.
+      </div>
+
+      <!-- Today progress -->
+      <section id="today-card" class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Today's progress</p>
+            <p id="today-count" class="mt-0.5 text-2xl font-bold tabular-nums">0 / 0</p>
+          </div>
+          <div id="today-ring" class="relative h-16 w-16">
+            <svg class="h-16 w-16 -rotate-90" viewBox="0 0 36 36">
+              <circle cx="18" cy="18" r="15.5" fill="none" class="stroke-slate-100 dark:stroke-slate-800" stroke-width="4" />
+              <circle id="today-progress" cx="18" cy="18" r="15.5" fill="none" class="stroke-emerald-500" stroke-width="4" stroke-linecap="round" stroke-dasharray="97.4" stroke-dashoffset="97.4" style="transition: stroke-dashoffset .5s ease" />
+            </svg>
+            <span id="today-pct" class="absolute inset-0 flex items-center justify-center text-sm font-semibold tabular-nums">0%</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Add habit (toggled by the + in the header) -->
+      <form id="habit-form" class="mb-6 hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div class="flex items-center gap-2">
+          <input id="habit-emoji" name="emoji" maxlength="2" value="✅" aria-label="Emoji"
+            class="h-11 w-12 shrink-0 rounded-xl border border-slate-200 bg-slate-50 text-center text-xl outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-800" />
+          <input id="habit-name" name="name" placeholder="e.g. Morning run" autocomplete="off" required
+            class="h-11 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-800" />
+          <button type="submit"
+            class="h-11 shrink-0 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 active:scale-95">Add</button>
+        </div>
+        <div id="color-picker" class="mt-3 flex flex-wrap gap-2"></div>
+        <div class="mt-4">
+          <p class="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">How often?</p>
+          <div id="freq-seg" class="flex gap-1.5"></div>
+          <div id="freq-days" class="mt-2 hidden flex-wrap gap-1.5"></div>
+        </div>
+      </form>
+
+      <!-- Weekday header -->
+      <div id="week-header" class="mb-2 px-4"></div>
+
+      <!-- Habit list -->
+      <main id="habit-list" class="space-y-2"></main>
+
+      <p id="empty-state" class="hidden py-16 text-center text-sm text-slate-400 dark:text-slate-500">
+        No habits yet — add your first one above ✨
+      </p>
+    </div>
+
+    <script is:inline>
+      // ---- constants ---------------------------------------------------------
+      const COLORS = {
+        emerald: '#10b981', sky: '#0ea5e9', blue: '#3b82f6', violet: '#8b5cf6',
+        rose: '#f43f5e', amber: '#f59e0b', orange: '#f97316', teal: '#14b8a6',
+        pink: '#ec4899', lime: '#84cc16',
+      };
+      const EMOJIS = ['✅','💧','📖','🏃','🧘','💪','🥗','😴','✍️','🎯','☀️','🎸','💊','🚭','📵'];
+
+      let habits = [];
+      const expanded = new Set();
+      const statsOpen = new Set();
+
+      // ---- passcode (stored in localStorage, sent as a header) ----------------
+      const PC_KEY = 'habitrack_passcode';
+      let passcode = localStorage.getItem(PC_KEY) || '';
+      const authHeaders = (extra) => (passcode ? { 'x-passcode': passcode, ...extra } : { ...extra });
+
+      // ---- date helpers ------------------------------------------------------
+      const iso = (d) => {
+        const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+        return z.toISOString().slice(0, 10);
+      };
+      const TODAY = iso(new Date());
+      const addDays = (isoStr, n) => {
+        const d = new Date(isoStr + 'T00:00:00');
+        d.setDate(d.getDate() + n);
+        return iso(d);
+      };
+
+      // schedule = Set of weekday numbers (0=Sun … 6=Sat) the habit is due on
+      const dow = (isoStr) => new Date(isoStr + 'T00:00:00').getDay();
+      const schedOf = (h) => new Set((h.schedule || '0,1,2,3,4,5,6').split(',').map(Number));
+
+      // ---- stats (only scheduled days count) --------------------------------
+      function stats(habit) {
+        const set = new Set(habit.days);
+        const sched = schedOf(habit);
+        const due = (d) => sched.has(dow(d));
+
+        // current streak: walk back over due days; today may be still-open (grace)
+        let cur = 0;
+        for (let d = TODAY, guard = 0; guard < 800; d = addDays(d, -1), guard++) {
+          if (!due(d)) continue;              // rest day — skip, doesn't break streak
+          if (set.has(d)) cur++;
+          else if (d === TODAY) continue;     // today not done yet — don't break
+          else break;
+        }
+
+        // longest streak: longest run of consecutive due days all done
+        const start = habit.days.length ? [...set].sort()[0] : TODAY;
+        let longest = 0, run = 0;
+        for (let d = start; d <= TODAY; d = addDays(d, 1)) {
+          if (!due(d)) continue;
+          if (set.has(d)) { run++; if (run > longest) longest = run; }
+          else run = 0;
+        }
+
+        // last 30 days completion rate over due days only
+        let dueCount = 0, hit = 0;
+        for (let i = 0; i < 30; i++) {
+          const d = addDays(TODAY, -i);
+          if (due(d)) { dueCount++; if (set.has(d)) hit++; }
+        }
+        return { current: cur, longest, total: set.size, rate30: dueCount ? Math.round((hit / dueCount) * 100) : 0 };
+      }
+
+      // ---- rendering ---------------------------------------------------------
+      const list = document.getElementById('habit-list');
+      const weekHead = document.getElementById('week-header');
+
+      // Shared 7-column grid so the header and every habit row line up exactly.
+      const GRID = 'grid grid-cols-[minmax(0,1fr)_repeat(7,2.25rem)] items-center gap-y-0';
+      const last7 = () => Array.from({ length: 7 }, (_, i) => addDays(TODAY, i - 6));
+
+      const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="h-[18px] w-[18px]"><path d="M4.5 12.75l6 6 9-13.5"/></svg>';
+      const CROSS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M6 18L18 6M6 6l12 12"/></svg>';
+
+      function weekHeader() {
+        const cols = last7().map((d) => {
+          const dd = new Date(d + 'T00:00:00');
+          const isToday = d === TODAY;
+          return `<div class="flex flex-col items-center leading-tight ${isToday ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'}">
+              <span class="text-[11px] font-medium">${dd.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+              <span class="text-[11px] ${isToday ? 'font-semibold' : ''}">${dd.getDate()}</span>
+            </div>`;
+        }).join('');
+        weekHead.innerHTML = `<div class="${GRID}"><span></span>${cols}</div>`;
+      }
+
+      const REST = '<span class="h-1 w-1 rounded-full bg-slate-200 dark:bg-slate-700"></span>';
+      function weekCells(habit) {
+        const set = new Set(habit.days);
+        const sched = schedOf(habit);
+        const color = COLORS[habit.color] || COLORS.emerald;
+        return last7().map((d) => {
+          const isToday = d === TODAY;
+          if (!sched.has(dow(d))) {
+            // rest day — not tracked, not clickable
+            return `<div class="flex h-9 items-center justify-center opacity-70" title="${d} · rest day">${REST}</div>`;
+          }
+          const done = set.has(d);
+          return `<button data-day="${d}" data-habit="${habit.id}"
+              class="day flex h-9 items-center justify-center rounded-lg transition hover:bg-slate-50 active:scale-90 dark:hover:bg-slate-800/60 ${isToday ? 'bg-slate-50/70 dark:bg-slate-800/40' : ''}"
+              title="${d}${done ? ' · done' : ''}"
+              style="${done ? `color:${color}` : ''}">
+              <span class="${done ? '' : 'text-slate-300 dark:text-slate-600'}">${done ? CHECK : CROSS}</span>
+            </button>`;
+        }).join('');
+      }
+
+      // Monday-of-current-week helper (weeks are Mon→Sun columns)
+      function mondayThisWeek() {
+        const dow = (new Date(TODAY + 'T00:00:00').getDay() + 6) % 7; // 0=Mon..6=Sun
+        return addDays(TODAY, -dow);
+      }
+
+      // ---- LEVEL 1: dated calendar grid (interactive overview) ---------------
+      const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      function calendarGrid(habit) {
+        const set = new Set(habit.days);
+        const sched = schedOf(habit);
+        const color = COLORS[habit.color] || COLORS.emerald;
+        const WEEKS = 20;
+        const mon = mondayThisWeek();
+
+        // per-column month info + where a new month begins (keyed off that week's Monday)
+        const col = [];
+        for (let w = 0; w < WEEKS; w++) {
+          const start = new Date(addDays(mon, -(WEEKS - 1 - w) * 7) + 'T00:00:00');
+          col.push({ m: start.getMonth(), y: start.getFullYear(), start });
+        }
+        const isMonthStart = (w) => w === 0 || col[w].m !== col[w - 1].m;
+        // a subtle divider on the first column of each new month
+        const div = (w) => (isMonthStart(w) && w > 0) ? 'border-l border-slate-200 dark:border-slate-700' : '';
+
+        // month labels row
+        let months = '';
+        for (let w = 0; w < WEEKS; w++) {
+          let label = '';
+          if (isMonthStart(w)) {
+            label = col[w].start.toLocaleDateString('en-US', { month: 'short' });
+            if (w === 0 || col[w].y !== col[w - 1].y) label += " '" + String(col[w].y).slice(2);
+          }
+          months += `<div class="w-8 shrink-0 pl-0.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 ${div(w)}">${label}</div>`;
+        }
+
+        // 7 weekday rows × WEEKS columns
+        let rows = '';
+        for (let r = 0; r < 7; r++) {
+          let cells = '';
+          for (let w = 0; w < WEEKS; w++) {
+            const d = addDays(addDays(mon, -(WEEKS - 1 - w) * 7), r);
+            const num = new Date(d + 'T00:00:00').getDate();
+            const dv = div(w);
+            if (d > TODAY) { cells += `<span class="h-8 w-8 shrink-0 ${dv}"></span>`; continue; }
+            if (!sched.has(dow(d))) {
+              cells += `<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs tabular-nums text-slate-300 dark:text-slate-700 ${dv}" title="${d} · rest day">${num}</span>`;
+              continue;
+            }
+            const done = set.has(d);
+            const isToday = d === TODAY;
+            cells += `<button data-day="${d}" data-habit="${habit.id}"
+              class="day h-8 w-8 shrink-0 rounded-lg text-xs font-medium tabular-nums transition active:scale-90 ${dv}
+                ${done ? 'text-white' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}
+                ${isToday ? 'ring-2 ring-offset-1 ring-offset-white dark:ring-offset-slate-900' : ''}"
+              style="${done ? `background:${color}` : ''};${isToday ? `--tw-ring-color:${color}` : ''}"
+              title="${d}">${num}</button>`;
+          }
+          rows += `<div class="flex items-center gap-1">${cells}<span class="ml-1 w-9 text-[11px] font-medium text-slate-400 dark:text-slate-500">${WD[r]}</span></div>`;
+        }
+
+        return `
+          <div class="overflow-x-auto no-scrollbar">
+            <div class="inline-block min-w-full">
+              <div class="mb-1.5 flex gap-1">${months}</div>
+              <div class="flex flex-col gap-1">${rows}</div>
+            </div>
+          </div>`;
+      }
+
+      // ---- LEVEL 2: GitHub-style contribution graph (analytic) ---------------
+      function githubGraph(habit) {
+        const set = new Set(habit.days);
+        const color = COLORS[habit.color] || COLORS.emerald;
+        const WEEKS = 53;
+        // Sunday-first rows, like GitHub
+        const todayDate = new Date(TODAY + 'T00:00:00');
+        const startOffset = (WEEKS - 1) * 7 + todayDate.getDay();
+
+        // month labels across the top
+        let months = '', prevMonth = -1;
+        for (let w = 0; w < WEEKS; w++) {
+          const d = new Date(addDays(TODAY, -(startOffset - w * 7)) + 'T00:00:00');
+          let label = '';
+          if (d.getMonth() !== prevMonth) { label = d.toLocaleDateString('en-US', { month: 'short' }); prevMonth = d.getMonth(); }
+          months += `<div class="w-[13px] shrink-0 text-[9px] leading-none text-slate-400 dark:text-slate-500">${label}</div>`;
+        }
+
+        const sched = schedOf(habit);
+        let cols = '';
+        for (let w = 0; w < WEEKS; w++) {
+          let cells = '';
+          for (let wd = 0; wd < 7; wd++) {   // Sunday-first, so wd === JS weekday number
+            const d = addDays(TODAY, -(startOffset - (w * 7 + wd)));
+            const future = d > TODAY;
+            const done = set.has(d);
+            const rest = !sched.has(wd);     // not scheduled → lighter, not "missed"
+            const bg = future ? 'opacity-0' : (done ? '' : (rest ? 'bg-slate-50 dark:bg-slate-800/40' : 'bg-slate-100 dark:bg-slate-800'));
+            cells += `<span class="h-[10px] w-[10px] rounded-[2px] ${bg}"
+              style="${done ? `background:${color}` : ''}" title="${d}${done ? ' · done' : (rest ? ' · rest day' : '')}"></span>`;
+          }
+          cols += `<div class="flex flex-col gap-[3px]">${cells}</div>`;
+        }
+
+        const total = habit.days.length;
+        return `
+          <div class="overflow-x-auto no-scrollbar">
+            <p class="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">${total} check-in${total === 1 ? '' : 's'} in the last year</p>
+            <div class="inline-block">
+              <div class="mb-1 flex gap-[3px] pl-6">${months}</div>
+              <div class="flex gap-1">
+                <div class="flex w-5 flex-col gap-[3px] pt-[13px] text-[9px] leading-[10px] text-slate-400 dark:text-slate-500">
+                  <span class="h-[10px]">Mon</span><span class="h-[13px]"></span><span class="h-[10px]">Wed</span><span class="h-[13px]"></span><span class="h-[10px]">Fri</span>
+                </div>
+                <div class="flex gap-[3px]">${cols}</div>
+              </div>
+            </div>
+            <div class="mt-2 flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+              <span>Missed</span>
+              <span class="h-[10px] w-[10px] rounded-[2px] bg-slate-100 dark:bg-slate-800"></span>
+              <span class="h-[10px] w-[10px] rounded-[2px]" style="background:${color}"></span>
+              <span>Done</span>
+            </div>
+          </div>`;
+      }
+
+      // ---- expanded panel: overview (calendar) + optional stats -------------
+      function overviewPanel(habit) {
+        const showStats = statsOpen.has(habit.id);
+        const s = stats(habit);
+        const cell = (label, val) => `
+          <div class="rounded-xl bg-slate-50 px-3 py-2.5 text-center dark:bg-slate-800/50">
+            <div class="text-lg font-bold tabular-nums">${val}</div>
+            <div class="text-[11px] font-medium text-slate-500 dark:text-slate-400">${label}</div>
+          </div>`;
+
+        return `
+          <div class="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+            ${calendarGrid(habit)}
+            <div class="mt-4 flex items-center justify-between">
+              <button data-stats="${habit.id}"
+                class="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+                <svg class="h-3.5 w-3.5 transition ${showStats ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+                ${showStats ? 'Hide stats' : 'View stats'}
+              </button>
+              <button data-delete="${habit.id}" class="rounded-lg px-3 py-1.5 text-xs font-medium text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-950/40">Delete</button>
+            </div>
+            ${showStats ? `
+              <div class="mt-4 space-y-4 rounded-xl bg-slate-50/60 p-4 dark:bg-slate-800/30">
+                <div class="grid grid-cols-4 gap-2">
+                  ${cell('🔥 Streak', s.current)}
+                  ${cell('Best', s.longest)}
+                  ${cell('Total', s.total)}
+                  ${cell('30-day', s.rate30 + '%')}
+                </div>
+                ${githubGraph(habit)}
+              </div>` : ''}
+          </div>`;
+      }
+
+      function render() {
+        const has = habits.length > 0;
+        document.getElementById('empty-state').classList.toggle('hidden', has);
+        weekHead.classList.toggle('hidden', !has);
+        weekHeader();
+        list.innerHTML = habits.map((h) => {
+          const s = stats(h);
+          const isOpen = expanded.has(h.id);
+          return `
+          <article class="rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-black/5 transition dark:bg-slate-900 dark:ring-white/10">
+            <div class="${GRID}">
+              <button data-toggle="${h.id}" class="flex min-w-0 items-center gap-2 py-1.5 pr-2 text-left">
+                <span class="shrink-0 text-base">${h.emoji}</span>
+                <span class="truncate font-medium">${escapeHtml(h.name)}</span>
+                ${s.current > 0 ? `<span class="shrink-0 text-xs text-slate-400 dark:text-slate-500">🔥${s.current}</span>` : ''}
+                <svg class="ml-auto h-4 w-4 shrink-0 text-slate-300 transition ${isOpen ? 'rotate-180' : ''} dark:text-slate-600" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
+              </button>
+              ${weekCells(h)}
+            </div>
+            ${isOpen ? overviewPanel(h) : ''}
+          </article>`;
+        }).join('');
+        renderTodayCard();
+      }
+
+      function renderTodayCard() {
+        const todayDow = dow(TODAY);
+        const due = habits.filter((h) => schedOf(h).has(todayDow));
+        const total = due.length;
+        let done = 0;
+        for (const h of due) if (h.days.includes(TODAY)) done++;
+        const pct = total ? Math.round((done / total) * 100) : 0;
+        document.getElementById('today-count').textContent = `${done} / ${total}`;
+        document.getElementById('today-pct').textContent = pct + '%';
+        const circ = 2 * Math.PI * 15.5;
+        document.getElementById('today-progress').style.strokeDashoffset = String(circ * (1 - pct / 100));
+      }
+
+      function escapeHtml(s) {
+        return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      }
+
+      // ---- interactions ------------------------------------------------------
+      list.addEventListener('click', async (e) => {
+        const dayBtn = e.target.closest('.day');
+        if (dayBtn) {
+          const id = Number(dayBtn.dataset.habit);
+          const day = dayBtn.dataset.day;
+          const habit = habits.find((h) => h.id === id);
+          // optimistic toggle
+          const has = habit.days.includes(day);
+          habit.days = has ? habit.days.filter((d) => d !== day) : [...habit.days, day];
+          render();
+          try {
+            await fetch('/api/checkins', {
+              method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+              body: JSON.stringify({ habitId: id, day }),
+            });
+          } catch { /* keep optimistic state */ }
+          return;
+        }
+        const toggle = e.target.closest('[data-toggle]');
+        if (toggle) {
+          const id = Number(toggle.dataset.toggle);
+          if (expanded.has(id)) { expanded.delete(id); statsOpen.delete(id); }
+          else expanded.add(id);
+          render();
+          return;
+        }
+        const statsBtn = e.target.closest('[data-stats]');
+        if (statsBtn) {
+          const id = Number(statsBtn.dataset.stats);
+          statsOpen.has(id) ? statsOpen.delete(id) : statsOpen.add(id);
+          render();
+          return;
+        }
+        const del = e.target.closest('[data-delete]');
+        if (del) {
+          const id = Number(del.dataset.delete);
+          habits = habits.filter((h) => h.id !== id);
+          expanded.delete(id);
+          render();
+          await fetch('/api/habits/' + id, { method: 'DELETE', headers: authHeaders() });
+          return;
+        }
+      });
+
+      // ---- add habit ---------------------------------------------------------
+      let selectedColor = 'emerald';
+      const picker = document.getElementById('color-picker');
+      picker.innerHTML = Object.entries(COLORS).map(([name, hex]) => `
+        <button type="button" data-color="${name}" aria-label="${name}"
+          class="h-7 w-7 rounded-full border-2 transition ${name === selectedColor ? 'scale-110 border-slate-400 dark:border-white' : 'border-transparent'}"
+          style="background:${hex}"></button>`).join('');
+      picker.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-color]');
+        if (!b) return;
+        selectedColor = b.dataset.color;
+        [...picker.children].forEach((c) =>
+          c.className = c.className.replace(/scale-110 border-slate-400 dark:border-white|border-transparent/g,
+            c.dataset.color === selectedColor ? 'scale-110 border-slate-400 dark:border-white' : 'border-transparent'));
+      });
+
+      // quick emoji suggestions on focus
+      const emojiInput = document.getElementById('habit-emoji');
+      emojiInput.addEventListener('focus', () => emojiInput.select());
+
+      // ---- frequency selector ------------------------------------------------
+      let freqMode = 'daily';                      // 'daily' | 'weekdays' | 'custom'
+      let customDays = new Set([1, 2, 3, 4, 5]);   // JS weekday numbers
+      const DAY_CHIPS = [[1, 'M'], [2, 'T'], [3, 'W'], [4, 'T'], [5, 'F'], [6, 'S'], [0, 'S']];
+      const seg = document.getElementById('freq-seg');
+      const daysBox = document.getElementById('freq-days');
+
+      function currentSchedule() {
+        if (freqMode === 'daily') return [0, 1, 2, 3, 4, 5, 6];
+        if (freqMode === 'weekdays') return [1, 2, 3, 4, 5];
+        return [...customDays];
+      }
+      function renderFreq() {
+        const opts = [['daily', 'Every day'], ['weekdays', 'Weekdays'], ['custom', 'Custom']];
+        seg.innerHTML = opts.map(([v, l]) => `
+          <button type="button" data-freq="${v}"
+            class="rounded-lg px-3 py-1.5 text-xs font-semibold transition ${freqMode === v
+              ? 'bg-emerald-500 text-white shadow-sm'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}">${l}</button>`).join('');
+        daysBox.classList.toggle('hidden', freqMode !== 'custom');
+        daysBox.classList.toggle('flex', freqMode === 'custom');
+        if (freqMode === 'custom') {
+          daysBox.innerHTML = DAY_CHIPS.map(([n, l]) => `
+            <button type="button" data-day-toggle="${n}"
+              class="h-8 w-8 rounded-full text-xs font-semibold transition ${customDays.has(n)
+                ? 'bg-emerald-500 text-white'
+                : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'}">${l}</button>`).join('');
+        }
+      }
+      seg.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-freq]');
+        if (!b) return;
+        freqMode = b.dataset.freq;
+        renderFreq();
+      });
+      daysBox.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-day-toggle]');
+        if (!b) return;
+        const n = Number(b.dataset.dayToggle);
+        customDays.has(n) ? customDays.delete(n) : customDays.add(n);
+        if (customDays.size === 0) customDays.add(n); // keep at least one
+        renderFreq();
+      });
+      renderFreq();
+
+      document.getElementById('habit-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('habit-name').value.trim();
+        if (!name) return;
+        const emoji = emojiInput.value.trim() || '✅';
+        const body = { name, emoji, color: selectedColor, schedule: currentSchedule() };
+        const res = await fetch('/api/habits', {
+          method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(body),
+        });
+        if (res.ok) {
+          const habit = await res.json();
+          habits.push(habit);
+          document.getElementById('habit-name').value = '';
+          document.getElementById('habit-form').classList.add('hidden');
+          render();
+        }
+      });
+
+      // toggle the add form from the header + button
+      document.getElementById('add-btn').addEventListener('click', () => {
+        const form = document.getElementById('habit-form');
+        const hidden = form.classList.toggle('hidden');
+        if (!hidden) document.getElementById('habit-name').focus();
+      });
+
+      // ---- theme toggle ------------------------------------------------------
+      document.getElementById('theme-toggle').addEventListener('click', () => {
+        const dark = document.documentElement.classList.toggle('dark');
+        localStorage.setItem('theme', dark ? 'dark' : 'light');
+      });
+
+      // ---- passcode gate + data loading -------------------------------------
+      const gate = document.getElementById('gate');
+      const gateForm = document.getElementById('gate-form');
+      const gateInput = document.getElementById('gate-input');
+      const gateError = document.getElementById('gate-error');
+      const loadError = document.getElementById('load-error');
+
+      function showGate() {
+        gate.classList.remove('hidden');
+        gate.classList.add('flex');
+        gateInput.focus();
+      }
+      function hideGate() {
+        gate.classList.add('hidden');
+        gate.classList.remove('flex');
+      }
+
+      // Returns 'ok' | 'unauthorized' | 'error'
+      async function fetchHabits() {
+        try {
+          const res = await fetch('/api/habits', { headers: authHeaders() });
+          if (res.status === 401) return 'unauthorized';
+          if (!res.ok) return 'error';
+          habits = await res.json();
+          return 'ok';
+        } catch {
+          return 'error';
+        }
+      }
+
+      async function boot() {
+        if (!passcode) { showGate(); return; }
+        const r = await fetchHabits();
+        if (r === 'ok') { hideGate(); loadError.classList.add('hidden'); render(); }
+        else if (r === 'unauthorized') { passcode = ''; localStorage.removeItem(PC_KEY); showGate(); }
+        else { hideGate(); loadError.classList.remove('hidden'); }
+      }
+
+      gateForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const val = gateInput.value.trim();
+        if (!val) return;
+        passcode = val;
+        gateError.classList.add('hidden');
+        const r = await fetchHabits();
+        if (r === 'ok') {
+          localStorage.setItem(PC_KEY, passcode); // remembered — no re-entry
+          hideGate();
+          loadError.classList.add('hidden');
+          render();
+        } else if (r === 'unauthorized') {
+          passcode = '';
+          gateError.classList.remove('hidden');
+          gateInput.select();
+        } else {
+          gateError.textContent = 'Something went wrong — try again.';
+          gateError.classList.remove('hidden');
+        }
+      });
+
+      boot();
+    </script>
+  </body>
+</html>
