@@ -65,10 +65,21 @@ export async function DELETE({ request, locals }) {
   if (!me) return unauthorized();
   const sql = getSql(env);
   const params = new URL(request.url).searchParams;
-  const viewer = Number(params.get('viewer'));
-  const owner = Number(params.get('owner'));
-  if (Number.isInteger(viewer)) await deleteShare(sql, me, viewer);
-  else if (Number.isInteger(owner)) await deleteShare(sql, owner, me);
-  else return json({ error: 'viewer or owner is required' }, 400);
+  // Parse presence explicitly: Number(null) === 0 passes Number.isInteger, so a
+  // naive Number(params.get(...)) would make an absent param look like id 0 and
+  // swallow the other branch (this is how ?owner= decline used to silently no-op).
+  const viewerRaw = params.get('viewer');
+  const ownerRaw = params.get('owner');
+  if (viewerRaw != null) {
+    const viewer = Number(viewerRaw);
+    if (!Number.isInteger(viewer)) return json({ error: 'viewer must be an integer' }, 400);
+    await deleteShare(sql, me, viewer); // I (owner) revoke that viewer
+  } else if (ownerRaw != null) {
+    const owner = Number(ownerRaw);
+    if (!Number.isInteger(owner)) return json({ error: 'owner must be an integer' }, 400);
+    await deleteShare(sql, owner, me); // I (viewer) decline/remove that owner's share
+  } else {
+    return json({ error: 'viewer or owner is required' }, 400);
+  }
   return json({ ok: true });
 }

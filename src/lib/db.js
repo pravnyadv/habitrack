@@ -20,8 +20,23 @@ export async function listProfiles(sql) {
 }
 
 export async function getProfile(sql, id) {
-  const rows = await sql`SELECT id, name, passcode_hash, is_admin, failed_attempts, locked_until FROM profiles WHERE id = ${id}`;
+  const rows = await sql`SELECT id, name, passcode_hash, is_admin, failed_attempts, locked_until, token_version FROM profiles WHERE id = ${id}`;
   return rows[0] || null;
+}
+
+// Just the token_version (cheap, indexed by PK) — used by verifyToken to check a
+// token hasn't been revoked. Returns null if the profile no longer exists.
+export async function getTokenVersion(sql, id) {
+  const rows = await sql`SELECT token_version FROM profiles WHERE id = ${id}`;
+  return rows.length ? rows[0].token_version : null;
+}
+
+// Invalidate every existing token for this profile by bumping its version
+// (called on passcode change). Returns the new version so a fresh token can be
+// minted for the current session.
+export async function bumpTokenVersion(sql, id) {
+  const rows = await sql`UPDATE profiles SET token_version = token_version + 1 WHERE id = ${id} RETURNING token_version`;
+  return rows[0]?.token_version ?? 0;
 }
 
 // Login throttling: bump the failure count, locking the profile once it hits the
@@ -145,20 +160,6 @@ export async function canView(sql, viewerId, ownerId) {
 
 // --- Data helpers (all scoped to a profile) ---------------------------------
 
-// Cheap per-profile "revision" signal for cross-device sync.
-export async function getVersion(sql, profileId) {
-  const rows = await sql`
-    SELECT
-      (SELECT COUNT(*) FROM habits WHERE profile_id = ${profileId})                        AS hc,
-      (SELECT COALESCE(MAX(id), 0) FROM habits WHERE profile_id = ${profileId})            AS hm,
-      (SELECT COALESCE(SUM(char_length(name)), 0) FROM habits WHERE profile_id = ${profileId}) AS hn,
-      (SELECT COUNT(*) FROM checkins c JOIN habits h ON h.id = c.habit_id WHERE h.profile_id = ${profileId})        AS cc,
-      (SELECT COALESCE(MAX(c.id), 0) FROM checkins c JOIN habits h ON h.id = c.habit_id WHERE h.profile_id = ${profileId}) AS cm
-  `;
-  const r = rows[0];
-  return `${r.hc}.${r.hm}.${r.hn}.${r.cc}.${r.cm}`;
-}
-
 export async function listHabits(sql, profileId) {
   return sql`
     SELECT h.id, h.name, h.emoji, h.color, h.schedule, h.created_at,
@@ -209,11 +210,21 @@ export async function updateHabit(sql, profileId, id, fields) {
 }
 
 // Set explicit sort_order = position for this profile's habits, in the given id
-// order. Ids not owned by the profile are simply not matched (no-op for them).
+// order. One atomic statement (a VALUES list joined by id) instead of N UPDATEs —
+// no partial reorder on failure, one round-trip. Ids not owned by the profile
+// simply don't match. Callers pass already-integer ids (see reorder.js).
 export async function reorderHabits(sql, profileId, ids) {
-  for (let i = 0; i < ids.length; i++) {
-    await sql`UPDATE habits SET sort_order = ${i} WHERE id = ${ids[i]} AND profile_id = ${profileId}`;
-  }
+  if (!ids.length) return;
+  const tuples = ids.map((_, i) => `($${i * 2 + 1}::int, $${i * 2 + 2}::int)`).join(', ');
+  const vals = [];
+  ids.forEach((id, i) => vals.push(id, i));
+  vals.push(profileId);
+  await sql.query(
+    `UPDATE habits AS h SET sort_order = v.pos
+     FROM (VALUES ${tuples}) AS v(id, pos)
+     WHERE h.id = v.id AND h.profile_id = $${vals.length}`,
+    vals
+  );
 }
 
 // Toggle a check-in, but only if the habit belongs to this profile (guards

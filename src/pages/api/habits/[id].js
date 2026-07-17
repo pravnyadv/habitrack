@@ -31,7 +31,7 @@ export async function PATCH({ params, request, locals }) {
     if (!name) return json({ error: 'Name is required' }, 400);
     fields.name = name;
   }
-  if (body.emoji != null) fields.emoji = String(body.emoji).trim() || '✅';
+  if (body.emoji != null) fields.emoji = (String(body.emoji).trim() || '✅').slice(0, 16);
   if (body.color != null) fields.color = String(body.color).trim() || 'emerald';
   if (body.schedule != null) {
     let sched = Array.isArray(body.schedule)

@@ -471,7 +471,7 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
           // covers those days); the strip stays only on the collapsed cards.
           const nameBtn = `
             <button data-toggle="${h.id}" class="flex w-full min-w-0 items-center gap-2 py-1.5 pr-2 text-left">
-              <span class="shrink-0 text-base">${h.emoji}</span>
+              <span class="shrink-0 text-base">${escapeHtml(h.emoji)}</span>
               <span class="truncate font-medium">${escapeHtml(h.name)}</span>
               ${s.current > 0 ? `<span class="inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums" style="color:${color};background:${color}14" title="${s.current}-day streak">${FLAME}${s.current}</span>` : ''}
               <svg class="ml-auto h-4 w-4 shrink-0 text-slate-300 transition ${isOpen ? 'rotate-180' : ''} dark:text-slate-600" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>

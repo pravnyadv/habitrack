@@ -1,5 +1,5 @@
-import { getSql, getProfile, deleteProfile, updateProfile, countProfiles } from '../../../lib/db.js';
-import { authedProfile, unauthorized, verifyPasscode, hashPasscode } from '../../../lib/auth.js';
+import { getSql, getProfile, deleteProfile, updateProfile, countProfiles, bumpTokenVersion } from '../../../lib/db.js';
+import { authedProfile, unauthorized, verifyPasscode, hashPasscode, signToken, TOKEN_COOKIE, sessionCookieOpts } from '../../../lib/auth.js';
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -26,7 +26,7 @@ export async function DELETE({ params, request, locals }) {
 
 // Rename (self or admin) and/or change own passcode (self only, requires the
 // current passcode). Admin passcode-reset of others is intentionally out of scope.
-export async function PATCH({ params, request, locals }) {
+export async function PATCH({ params, request, locals, cookies }) {
   const env = locals.runtime?.env;
   const callerId = await authedProfile(request, env);
   if (!callerId) return unauthorized();
@@ -62,5 +62,15 @@ export async function PATCH({ params, request, locals }) {
   }
 
   const updated = await updateProfile(sql, target, fields);
-  return json({ ok: true, id: updated.id, name: updated.name });
+
+  // Changing the passcode revokes every existing token (bump token_version), then
+  // re-issues a fresh one for THIS session so the user isn't logged out here.
+  let token;
+  if (fields.passcodeHash != null) {
+    const tokenVersion = await bumpTokenVersion(sql, target);
+    token = await signToken(target, env, { tokenVersion });
+    cookies.set(TOKEN_COOKIE, token, sessionCookieOpts);
+  }
+
+  return json({ ok: true, id: updated.id, name: updated.name, ...(token ? { token } : {}) });
 }

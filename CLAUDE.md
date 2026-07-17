@@ -45,7 +45,6 @@ src/
       habits/[id].js     # DELETE / PATCH (edit name/emoji/color/schedule)
       habits/reorder.js  # POST {ids:[...]} -> set sort_order (token-scoped)
       checkins.js        # POST toggle a day (token-scoped; only within the BACKFILL_DAYS window)
-      version.js         # GET revision (own, or ?profile=<id> if shared)
       login.js           # POST {profileId,passcode} -> token + sets session cookie (throttled: 5 fails -> 15min lock, 429)
       logout.js          # POST clears the session cookie
       session.js         # POST re-issues the session cookie from a Bearer token (PWA/Safari cookie loss)
@@ -89,11 +88,13 @@ Passcodes are **hashed** (PBKDF2-SHA256 + salt) in the `profiles` table — neve
 
 1. `POST /api/login {profileId, passcode}` verifies the hash → returns a **signed token** (`profileId.exp.hmac`, HMAC over `AUTH_SECRET`).
 2. Client stores `habitrack_token` + `habitrack_profile` ({id,name,admin}) in localStorage; sends `Authorization: Bearer <token>` on every request.
-3. `authedProfile(request, env)` verifies the token (cheap, no DB) and returns the `profileId`; **all data queries are scoped to it**.
+3. `authedProfile(request, env)` verifies the token and returns the `profileId`; **all data queries are scoped to it**. Verification is HMAC + expiry **plus one cheap indexed `token_version` read** (revocation, below).
 
 Profile creation is **open** (anyone with the URL). The first/default profile (`is_admin=true`) can delete any profile; others can only delete/manage their own. The page never server-renders data — the client loads it via the API with the token.
 
-**Session = httpOnly cookie + server-side gate (no client-auth flicker).** Login/create set an httpOnly `habitrack_token` cookie (`sessionCookieOpts`, `secure` in prod) in addition to returning the token. `src/middleware.js` gates `/` and `/overview`: it verifies the cookie and **302s to `/profile` before any HTML is sent** if there's no valid session — so a signed-out visit never paints the app. `authedProfile(request, env)` reads the token from the `Authorization` header *or* the cookie, so same-origin fetches authenticate on the cookie alone. `/api/logout` clears it. `verifyToken(token, env)` is the shared HMAC check (no DB).
+**Session = httpOnly cookie + server-side gate (no client-auth flicker).** Login/create set an httpOnly `habitrack_token` cookie (`sessionCookieOpts`, `secure` in prod) in addition to returning the token. `src/middleware.js` gates `/` and `/overview`: it verifies the cookie and **302s to `/profile` before any HTML is sent** if there's no valid session — so a signed-out visit never paints the app. `authedProfile(request, env)` reads the token from the `Authorization` header *or* the cookie, so same-origin fetches authenticate on the cookie alone. `/api/logout` clears it. `verifyToken(token, env)` is the shared check (HMAC + expiry + `token_version`).
+
+**Token revocation (`token_version`).** Tokens embed a `token_version` inside the signed payload (`<profileId>.<exp>.<version>.<hmac>`); `verifyToken` confirms it still matches `profiles.token_version` (one indexed PK read) — so a token can be invalidated server-side. **Changing a passcode bumps the version**, revoking every previously-issued token, then re-issues a fresh token+cookie for the current session (the PATCH response carries the new `token`; `Manage` stores it). Deleting a profile also kills its tokens (the row is gone → version read returns null). Legacy pre-versioning 3-part tokens are treated as version 0, so they stay valid until the next passcode change. The DB read fails **closed** (a DB error → unauthenticated, never a 500 out of the gate). Logout still only clears the cookie (per-device); it does not bump the version.
 
 **PWA / Safari cookie loss → session restore.** Installed PWAs (iOS standalone especially) and Safari ITP can drop the httpOnly cookie while **localStorage keeps the token** — so the middleware gate 302s `/` → `/profile` even though the client is "logged in", stranding the user on the picker. Fix: `POST /api/session` re-issues the cookie from a valid `Authorization: Bearer` token (no DB). The logged-out `Switch` picker (`me=null`) checks for a localStorage token on mount and, if present, calls `/api/session` and goes to `/` (shows "Restoring your session…"); a stale token clears localStorage and falls back to the picker. **Realtime is unaffected** — Pusher uses public channels (`habitrack-<profileId>`) with just the public key+cluster (no authorizer, no cookie), and all client API calls authenticate via the Bearer header, so only the server-side navigation gate ever depended on the cookie.
 
@@ -123,7 +124,7 @@ Stats/streaks/heatmaps are computed **client-side** from each habit's `days` arr
 
 ## Realtime
 
-On any check-in / add / delete / edit (`update`) / reorder, the endpoint calls `broadcast(env, profileId, payload, socketId)` → a signed Pusher REST trigger (manual `node:crypto` md5+hmac, works on workerd) to channel **`habitrack-<profileId>`**, excluding the originating socket. Payload `type`s: `checkin`, `add`, `delete`, `update` (carries the full habit sans `days`), `reorder` (carries `ids`). Clients subscribe to their own profile's channel and `applyRemote()` mutates local state surgically (no refetch). A slow per-profile version-poll (`/api/version`) is the dropped-socket safety net.
+On any check-in / add / delete / edit (`update`) / reorder, the endpoint calls `broadcast(env, profileId, payload, socketId)` → a signed Pusher REST trigger (manual `node:crypto` md5+hmac, works on workerd) to channel **`habitrack-<profileId>`**, excluding the originating socket. Payload `type`s: `checkin`, `add`, `delete`, `update` (carries the full habit sans `days`), `reorder` (carries `ids`). Clients subscribe to their own profile's channel and `applyRemote()` mutates local state surgically (no refetch). Dropped-socket safety net: `pusher-js` auto-reconnects and resubscribes, and both surfaces refetch on `visibilitychange`/`pageshow` (and reload on a day rollover), so a returning tab reconciles any missed events.
 
 ## PWA
 

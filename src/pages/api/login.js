@@ -37,7 +37,7 @@ export async function POST({ request, locals, cookies }) {
   }
 
   await resetFailedLogin(sql, profile.id);
-  const token = await signToken(profile.id, env);
+  const token = await signToken(profile.id, env, { tokenVersion: profile.token_version });
   cookies.set(TOKEN_COOKIE, token, sessionCookieOpts);
   return json({ token, id: profile.id, name: profile.name, admin: !!profile.is_admin });
 }
