@@ -44,7 +44,7 @@ src/
       habits.js          # GET list (own, or ?profile=<id> if shared) / POST create
       habits/[id].js     # DELETE / PATCH (edit name/emoji/color/schedule)
       habits/reorder.js  # POST {ids:[...]} -> set sort_order (token-scoped)
-      checkins.js        # POST toggle a day              (token-scoped)
+      checkins.js        # POST toggle a day (token-scoped; only within the BACKFILL_DAYS window)
       version.js         # GET revision (own, or ?profile=<id> if shared)
       login.js           # POST {profileId,passcode} -> token + sets session cookie (throttled: 5 fails -> 15min lock, 429)
       logout.js          # POST clears the session cookie
@@ -118,6 +118,8 @@ Profile creation is **open** (anyone with the URL). The first/default profile (`
 - `profile_shares (id, owner_id → profiles, viewer_id → profiles, created_at, accepted_at, UNIQUE(owner_id, viewer_id))` — owner invites viewer to read-only access; `accepted_at` NULL = pending. Both FKs `ON DELETE CASCADE`.
 
 Stats/streaks/heatmaps are computed **client-side** from each habit's `days` array. Non-scheduled days are "rest days" (not counted; streaks skip them). "Active from" = earlier of a habit's created date / first check-in — days before that are never "missed". See `compute.js`.
+
+**Backfill window.** A check-in can be marked/unmarked for today and the recent past, capped by `BACKFILL_DAYS` (in `compute.js`, currently 7) — change that one constant to widen/narrow it. The week strip renders markable days as a hollow ring (◯ = tap to complete), done days as a ✓ in the habit color, and days older than the window as a faint locked ✕; the month calendar makes older days inert `<div>`s (view-only history). `/api/checkins` re-checks the window server-side (coarse UTC guard with ±1 day of timezone slack) so it holds outside the UI.
 
 ## Realtime
 

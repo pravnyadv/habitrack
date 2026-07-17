@@ -74,6 +74,11 @@ export function stats(habit) {
   return { current: cur, longest, total: set.size, rate30: dueCount ? Math.round((hit / dueCount) * 100) : 0 };
 }
 
+// How many days back a check-in may be marked, today inclusive. Change this one
+// number to widen/narrow the backfill window; enforced in the UI (exact, local)
+// and coarsely in /api/checkins (server backstop).
+export const BACKFILL_DAYS = 7;
+
 // ---- rolling-12-month heatmap --------------------------------------------
 export function windowStart() {
   const t = new Date(TODAY + 'T00:00:00');
