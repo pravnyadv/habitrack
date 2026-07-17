@@ -1,6 +1,6 @@
-import { useState } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import { apiFetch } from '../../lib/compute.js';
-import { VIEW, SECTION, PERSON, EYE, presence, go } from './ui.jsx';
+import { TK, PID, VIEW, SECTION, PERSON, EYE, presence, go } from './ui.jsx';
 
 // Two modes, keyed on `me`:
 //   Logged out  → onboarding picker: every profile (tap → sign in) + create one.
@@ -11,6 +11,25 @@ import { VIEW, SECTION, PERSON, EYE, presence, go } from './ui.jsx';
 // props: profiles=[{id,name}], me={id,name,admin}|null, shares={sharedWithMe,invites}
 export default function Switch({ profiles = [], me = null, shares: initialShares = { sharedWithMe: [], invites: [] } }) {
   const [shares, setShares] = useState(initialShares);
+  const [restoring, setRestoring] = useState(false);
+
+  // PWA fix: the server sees no session cookie (me=null) but we may still hold a
+  // valid token in localStorage (installed PWAs can lose the cookie while keeping
+  // localStorage). Re-issue the cookie from that token and go straight to the app
+  // instead of stranding the user on the picker.
+  useEffect(() => {
+    if (me) return;
+    let token = null, profile = null;
+    try { token = localStorage.getItem(TK); profile = JSON.parse(localStorage.getItem(PID) || 'null'); } catch { /* ignore */ }
+    if (!token || !profile) return; // genuinely signed out → show the picker
+    setRestoring(true);
+    (async () => {
+      const { ok } = await apiFetch('/api/session', { method: 'POST', token });
+      if (ok) { go('/'); return; }
+      localStorage.removeItem(TK); localStorage.removeItem(PID); // stale token
+      setRestoring(false);
+    })();
+  }, []);
 
   async function refreshShares() {
     const { ok, data } = await apiFetch('/api/shares');
@@ -22,6 +41,9 @@ export default function Switch({ profiles = [], me = null, shares: initialShares
 
   // ── Logged-out onboarding picker ──────────────────────────────────────────
   if (!me) {
+    if (restoring) {
+      return <p class="py-16 text-center text-sm text-slate-400 dark:text-slate-500">Restoring your session…</p>;
+    }
     return (
       <div class="flex flex-col gap-2">
         <h2 class={SECTION}>Choose a profile</h2>
