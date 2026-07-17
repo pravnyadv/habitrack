@@ -1,0 +1,69 @@
+---
+import '../styles/global.css';
+import AppHeader from '../components/AppHeader.astro';
+// Same shell + header as the main app (via <AppHeader>), so /profile never feels
+// like a different app. When `tab` is set, render the Overview/Switch/Manage nav.
+const { pageTitle = 'Profile — Habitrack', tab } = Astro.props;
+const TABS = [
+  ['overview', 'Overview', '/profile'],
+  ['manage', 'Manage', '/profile/manage'],
+  ['switch', 'Switch', '/profile/switch'],
+];
+---
+
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{pageTitle}</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#020617" media="(prefers-color-scheme: dark)" />
+    <script is:inline>
+      const t = localStorage.getItem('theme');
+      if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      }
+    </script>
+  </head>
+  <body class="h-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans antialiased">
+    <div class="mx-auto max-w-3xl px-4 pb-24 pt-8 sm:pt-12">
+      <AppHeader showHabits={!!tab} />
+
+      {tab && (
+        <nav class="mb-6 flex gap-6 border-b border-slate-200 dark:border-slate-800">
+          {TABS.map(([id, label, href]) => (
+            <a href={href} class={`-mb-px border-b-2 px-1 pb-3 text-sm font-semibold transition ${tab === id ? 'border-emerald-500 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}>{label}</a>
+          ))}
+        </nav>
+      )}
+
+      <!-- Read-only banner (shown when previewing a profile shared with you) — matches the main app's -->
+      <div id="view-banner" class="mb-6 hidden items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+        <span class="flex min-w-0 items-center gap-2">
+          <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+          <span class="truncate">Viewing <span id="view-banner-name" class="font-semibold"></span> · read-only</span>
+        </span>
+        <button id="view-exit" class="shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-900/50">Exit</button>
+      </div>
+
+      <slot />
+    </div>
+
+    <script>
+      // Show the read-only banner when previewing a shared profile (same as the main app).
+      let viewing = null;
+      try { viewing = JSON.parse(localStorage.getItem('habitrack_viewing') || 'null'); } catch {}
+      const banner = document.getElementById('view-banner');
+      if (viewing && banner) {
+        document.getElementById('view-banner-name').textContent = viewing.name;
+        banner.classList.remove('hidden');
+        banner.classList.add('flex');
+        document.getElementById('view-exit')?.addEventListener('click', () => {
+          localStorage.removeItem('habitrack_viewing');
+          location.reload();
+        });
+      }
+    </script>
+  </body>
+</html>

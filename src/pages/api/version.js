@@ -1,4 +1,4 @@
-import { getSql, getVersion } from '../../lib/db.js';
+import { getSql, getVersion, canView } from '../../lib/db.js';
 import { authedProfile, unauthorized } from '../../lib/auth.js';
 
 const json = (data, status = 200) =>
@@ -9,8 +9,16 @@ const json = (data, status = 200) =>
 
 export async function GET({ request, locals }) {
   const env = locals.runtime?.env;
-  const profileId = await authedProfile(request, env);
-  if (!profileId) return unauthorized();
-  const version = await getVersion(getSql(env), profileId);
+  const me = await authedProfile(request, env);
+  if (!me) return unauthorized();
+  const sql = getSql(env);
+  const raw = new URL(request.url).searchParams.get('profile');
+  const target = raw != null ? Number(raw) : null;
+  let scope = me;
+  if (target != null && Number.isInteger(target) && target !== me) {
+    if (!(await canView(sql, me, target))) return json({ error: 'Forbidden' }, 403);
+    scope = target;
+  }
+  const version = await getVersion(sql, scope);
   return json({ version });
 }

@@ -56,6 +56,21 @@ await sql`
 
 await sql`CREATE INDEX IF NOT EXISTS idx_checkins_habit_day ON checkins (habit_id, day)`;
 
+// View-only sharing: owner_id grants viewer_id read access to their profile.
+await sql`
+  CREATE TABLE IF NOT EXISTS profile_shares (
+    id         SERIAL PRIMARY KEY,
+    owner_id   INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    viewer_id  INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (owner_id, viewer_id)
+  )
+`;
+// A share is pending until the recipient accepts it (accepted_at set). New rows
+// are created NULL (pending). No grandfathering — this must stay idempotent, and
+// a blanket UPDATE would auto-accept real pending invites on every re-run.
+await sql`ALTER TABLE profile_shares ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ`;
+
 // Frequency: CSV of JS weekday numbers (0=Sun … 6=Sat) the habit is scheduled on.
 await sql`ALTER TABLE habits ADD COLUMN IF NOT EXISTS schedule TEXT NOT NULL DEFAULT '0,1,2,3,4,5,6'`;
 
@@ -78,6 +93,14 @@ const defaultId = defaultProfile.id;
 // Admin flag: the first/default profile is admin (can delete any profile).
 await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false`;
 await sql`UPDATE profiles SET is_admin = true WHERE id = ${defaultId}`;
+
+// Login throttling: count consecutive failures; lock the profile until a time.
+await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS failed_attempts INTEGER NOT NULL DEFAULT 0`;
+await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ`;
+
+// Presence: last time this profile was active in the app (heartbeat). Powers the
+// admin "online now" count and the per-profile "last active" shown within shares.
+await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ`;
 
 // Add habits.profile_id with the default profile as the column default, so old
 // code that inserts without it still lands in the default profile.

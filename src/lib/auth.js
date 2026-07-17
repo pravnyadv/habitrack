@@ -51,13 +51,13 @@ export async function signToken(profileId, env, ttlDays = 365) {
   return `${payload}.${await hmac(secret, payload)}`;
 }
 
-// Returns the profileId (number) if the request carries a valid token, else null.
-export async function authedProfile(request, env) {
+export const TOKEN_COOKIE = 'habitrack_token';
+
+// Verify a raw token string → profileId (number) or null. No DB hit (HMAC only).
+// Used by both authedProfile (endpoints) and the middleware auth gate.
+export async function verifyToken(token, env) {
   const secret = env?.AUTH_SECRET;
-  if (!secret) return null;
-  const header = request.headers.get('authorization') || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : request.headers.get('x-token');
-  if (!token) return null;
+  if (!secret || !token) return null;
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   const [pid, exp, sig] = parts;
@@ -67,6 +67,23 @@ export async function authedProfile(request, env) {
   const id = Number(pid);
   return Number.isInteger(id) ? id : null;
 }
+
+// Returns the profileId if the request carries a valid token, else null. Looks
+// in the Authorization header first, then the session cookie.
+export async function authedProfile(request, env) {
+  const header = request.headers.get('authorization') || '';
+  let token = header.startsWith('Bearer ') ? header.slice(7) : request.headers.get('x-token');
+  if (!token) {
+    const m = (request.headers.get('cookie') || '').match(new RegExp(`(?:^|;\\s*)${TOKEN_COOKIE}=([^;]+)`));
+    if (m) token = decodeURIComponent(m[1]);
+  }
+  return verifyToken(token, env);
+}
+
+// Cookie options for the session token (httpOnly so JS can't read it).
+export const sessionCookieOpts = {
+  path: '/', httpOnly: true, secure: import.meta.env.PROD, sameSite: 'lax', maxAge: 365 * 86400,
+};
 
 export const unauthorized = () =>
   new Response(JSON.stringify({ error: 'Unauthorized' }), {
