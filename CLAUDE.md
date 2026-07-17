@@ -48,6 +48,7 @@ src/
       version.js         # GET revision (own, or ?profile=<id> if shared)
       login.js           # POST {profileId,passcode} -> token + sets session cookie (throttled: 5 fails -> 15min lock, 429)
       logout.js          # POST clears the session cookie
+      session.js         # POST re-issues the session cookie from a Bearer token (PWA/Safari cookie loss)
       profiles.js        # GET list (public) / POST create (open, sets session cookie)
       profiles/[id].js   # DELETE (self or admin) / PATCH (rename, change passcode)
       shares.js          # GET {shared,sharedWithMe,invites} / POST invite / PATCH accept / DELETE ?viewer|?owner
@@ -93,6 +94,8 @@ Passcodes are **hashed** (PBKDF2-SHA256 + salt) in the `profiles` table — neve
 Profile creation is **open** (anyone with the URL). The first/default profile (`is_admin=true`) can delete any profile; others can only delete/manage their own. The page never server-renders data — the client loads it via the API with the token.
 
 **Session = httpOnly cookie + server-side gate (no client-auth flicker).** Login/create set an httpOnly `habitrack_token` cookie (`sessionCookieOpts`, `secure` in prod) in addition to returning the token. `src/middleware.js` gates `/` and `/overview`: it verifies the cookie and **302s to `/profile` before any HTML is sent** if there's no valid session — so a signed-out visit never paints the app. `authedProfile(request, env)` reads the token from the `Authorization` header *or* the cookie, so same-origin fetches authenticate on the cookie alone. `/api/logout` clears it. `verifyToken(token, env)` is the shared HMAC check (no DB).
+
+**PWA / Safari cookie loss → session restore.** Installed PWAs (iOS standalone especially) and Safari ITP can drop the httpOnly cookie while **localStorage keeps the token** — so the middleware gate 302s `/` → `/profile` even though the client is "logged in", stranding the user on the picker. Fix: `POST /api/session` re-issues the cookie from a valid `Authorization: Bearer` token (no DB). The logged-out `Switch` picker (`me=null`) checks for a localStorage token on mount and, if present, calls `/api/session` and goes to `/` (shows "Restoring your session…"); a stale token clears localStorage and falls back to the picker. **Realtime is unaffected** — Pusher uses public channels (`habitrack-<profileId>`) with just the public key+cluster (no authorizer, no cookie), and all client API calls authenticate via the Bearer header, so only the server-side navigation gate ever depended on the cookie.
 
 **`index.astro` SSRs the initial habits.** Since middleware guarantees a valid cookie, the page frontmatter fetches the signed-in profile's habits and embeds them in a `<script id="initial-habits" type="application/json">` (with `<` escaped); the client renders from that immediately, then reconciles with a background fetch. View-mode (a client-only concept via `habitrack_viewing`) still fetches the viewed profile.
 
