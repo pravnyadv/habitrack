@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import {
   TODAY, iso, addDays, schedOf, stats, windowStart, activeFromOf,
   heatmapBlock, githubGraph, buildExportRecords, toCSV, toJSON, downloadFile, connectRealtime, apiFetch,
@@ -15,13 +15,11 @@ export default function Overview({ initialHabits = [], profileId }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [viewing, setViewing] = useState(null); // resolved client-side (localStorage)
 
-  const dbg = (tag, extra) => { try { apiFetch('/api/dbg', { method: 'POST', body: { tag, ...extra } }); } catch {} };
-  const sumHabits = (hs) => (hs || []).map((h) => ({ n: h.name, days: (h.days || []).length, first: (h.days || [])[0], ct: h.created_at }));
+  const heatRef = useRef(null);
 
   async function load(viewId) {
     const url = viewId ? `/api/habits?profile=${viewId}` : '/api/habits';
     const { ok, status, data } = await apiFetch(url);
-    dbg('load', { url, ok, status, habits: sumHabits(data) });
     if (status === 401) { location.href = '/profile'; return; }
     if (status === 403) { localStorage.removeItem(VIEW); location.href = '/'; return; }
     if (ok) setHabits(data);
@@ -30,7 +28,6 @@ export default function Overview({ initialHabits = [], profileId }) {
   useEffect(() => {
     let v = null;
     try { v = JSON.parse(localStorage.getItem(VIEW) || 'null'); } catch {}
-    dbg('mount', { TODAY, earliest: windowStart(), viewing: v, initial: sumHabits(initialHabits) });
     setViewing(v);
     const dataId = v ? v.id : profileId;
     // Always fetch fresh on mount — the SSR snapshot can be stale on a long-lived
@@ -110,8 +107,12 @@ export default function Overview({ initialHabits = [], profileId }) {
     return { avg, perfect, longest, heat };
   }, [habits, filter]);
 
+  // Preact does not reliably re-apply `dangerouslySetInnerHTML` after hydration
+  // when the string is unchanged between renders — so the SSR graph could stay
+  // stale/empty even though `agg.heat` is correct. Set it imperatively so the
+  // DOM always matches the computed HTML.
   useEffect(() => {
-    if (agg) dbg('agg', { filter, habitsLen: habits.length, avg: agg.avg, perfect: agg.perfect, count: (String(agg.heat).match(/(\d+)\s+check-in/) || [])[1] });
+    if (heatRef.current && agg) heatRef.current.innerHTML = agg.heat;
   }, [agg]);
 
   function exportRecords(kind) {
@@ -157,7 +158,7 @@ export default function Overview({ initialHabits = [], profileId }) {
               <Chip key={h.id} active={filter === h.id} onClick={() => setFilter(h.id)}>{h.emoji} {h.name}</Chip>
             ))}
           </div>
-          <div class="mt-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 dark:bg-slate-900 dark:ring-white/10" dangerouslySetInnerHTML={{ __html: agg.heat }} />
+          <div ref={heatRef} class="mt-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 dark:bg-slate-900 dark:ring-white/10" dangerouslySetInnerHTML={{ __html: agg.heat }} />
         </>
       )}
     </div>
