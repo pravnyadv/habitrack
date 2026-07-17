@@ -9,8 +9,8 @@ const { showAdd = false, showOverview = false, showHabits = false } = Astro.prop
 const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 ---
 
-<header class="mb-8 flex items-center justify-between">
-  <div>
+<header class="mb-8 flex items-center justify-between gap-3">
+  <div class="min-w-0">
     <h1 class="flex items-center gap-2 text-2xl font-bold tracking-tight">
       <a href="/" class="flex items-center gap-2 transition hover:opacity-80">
         <span class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[7px]">
@@ -31,17 +31,17 @@ const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: '
         </button>
       )}
     </h1>
-    <div class="mt-1 flex items-center gap-2">
-      <p class="text-sm text-slate-500 dark:text-slate-400">{today}</p>
-      <div class="relative">
+    <div class="mt-1 flex min-w-0 items-center gap-2">
+      <p class="shrink-0 text-sm text-slate-500 dark:text-slate-400">{today}</p>
+      <div class="relative min-w-0">
         <button id="profile-chip" title="Profile menu"
-          class="hidden items-center gap-1.5 rounded-full bg-slate-100 py-0.5 pl-2 pr-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+          class="hidden max-w-full items-center gap-1.5 rounded-full bg-slate-100 py-0.5 pl-2 pr-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
           <span id="chip-online" title="People online now" class="hidden items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
             <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span><span id="online-count" class="tabular-nums">0</span>
           </span>
-          <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0" /></svg>
-          <span id="profile-chip-name"></span>
-          <svg class="h-3 w-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+          <svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0" /></svg>
+          <span id="profile-chip-name" class="truncate"></span>
+          <svg class="h-3 w-3 shrink-0 opacity-60" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
         </button>
         <div id="profile-menu" class="absolute left-0 top-full z-30 mt-1.5 hidden w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
           <button data-menu="overview" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800">
@@ -64,7 +64,7 @@ const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: '
       </div>
     </div>
   </div>
-  <div class="flex items-center gap-2">
+  <div class="flex shrink-0 items-center gap-2">
     {showHabits && (
       <a href="/" aria-label="Back to habits" title="Back to habits"
         class="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
