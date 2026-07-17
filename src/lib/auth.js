@@ -1,6 +1,9 @@
 // Profile auth: passcodes are hashed (PBKDF2-SHA256) and stored in the DB, never
 // in env. Login verifies the hash once and returns a signed token (HMAC over an
-// AUTH_SECRET); every later request just verifies the cheap token — no DB hit.
+// AUTH_SECRET). The token carries a token_version; verifyToken checks it against
+// the profile's current version (one cheap indexed read) so a passcode change or
+// profile deletion revokes every previously-issued token.
+import { getSql, getTokenVersion } from './db.js';
 
 const PBKDF2_ITER = 100000;
 const enc = (s) => new TextEncoder().encode(s);
@@ -43,29 +46,44 @@ async function hmac(secret, msg) {
   return b64url(await crypto.subtle.sign('HMAC', key, enc(msg)));
 }
 
-export async function signToken(profileId, env, ttlDays = 365) {
+// Token format: <profileId>.<exp>.<tokenVersion>.<hmac>. The version is folded
+// into the signed payload so it can't be tampered with.
+export async function signToken(profileId, env, { tokenVersion = 0, ttlDays = 365 } = {}) {
   const secret = env?.AUTH_SECRET;
   if (!secret) throw new Error('AUTH_SECRET not set');
   const exp = Math.floor(Date.now() / 1000) + ttlDays * 86400;
-  const payload = `${profileId}.${exp}`;
+  const payload = `${profileId}.${exp}.${tokenVersion}`;
   return `${payload}.${await hmac(secret, payload)}`;
 }
 
 export const TOKEN_COOKIE = 'habitrack_token';
 
-// Verify a raw token string → profileId (number) or null. No DB hit (HMAC only).
-// Used by both authedProfile (endpoints) and the middleware auth gate.
+// Verify a raw token string → profileId (number) or null. Checks HMAC + expiry,
+// then confirms the token_version still matches the profile (revocation check —
+// one cheap indexed read). Used by both authedProfile (endpoints) and the
+// middleware auth gate. Legacy 3-part tokens (pre-versioning) are treated as
+// version 0, so they stay valid until the next passcode change.
 export async function verifyToken(token, env) {
   const secret = env?.AUTH_SECRET;
   if (!secret || !token) return null;
   const parts = token.split('.');
-  if (parts.length !== 3) return null;
-  const [pid, exp, sig] = parts;
+  let pid, exp, ver, sig, payload;
+  if (parts.length === 4) { [pid, exp, ver, sig] = parts; payload = `${pid}.${exp}.${ver}`; }
+  else if (parts.length === 3) { [pid, exp, sig] = parts; ver = '0'; payload = `${pid}.${exp}`; }
+  else return null;
   if (Number(exp) < Math.floor(Date.now() / 1000)) return null;
-  const expected = await hmac(secret, `${pid}.${exp}`);
+  const expected = await hmac(secret, payload);
   if (!timingSafeEqual(sig, expected)) return null;
   const id = Number(pid);
-  return Number.isInteger(id) ? id : null;
+  if (!Number.isInteger(id)) return null;
+  // Revocation: the profile's current token_version must match the token's. Keep
+  // the no-throw contract callers rely on — a DB error fails closed (the app is
+  // unusable without the DB anyway), never a 500 out of the auth gate.
+  let current;
+  try { current = await getTokenVersion(getSql(env), id); }
+  catch { return null; }
+  if (current == null || current !== Number(ver)) return null;
+  return id;
 }
 
 // Returns the profileId if the request carries a valid token, else null. Looks

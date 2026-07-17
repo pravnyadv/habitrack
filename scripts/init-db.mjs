@@ -102,6 +102,10 @@ await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ
 // admin "online now" count and the per-profile "last active" shown within shares.
 await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ`;
 
+// Token revocation: bumped on passcode change; a token is valid only while its
+// embedded version matches. Legacy pre-versioning tokens count as 0.
+await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0`;
+
 // Add habits.profile_id with the default profile as the column default, so old
 // code that inserts without it still lands in the default profile.
 await sql`ALTER TABLE habits ADD COLUMN IF NOT EXISTS profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE`;

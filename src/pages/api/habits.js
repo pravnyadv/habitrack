@@ -36,7 +36,9 @@ export async function POST({ request, locals }) {
   const name = (body.name || '').trim();
   if (!name) return json({ error: 'Name is required' }, 400);
 
-  const emoji = (body.emoji || '✅').trim() || '✅';
+  // Cap length — an emoji (incl. ZWJ sequences) never needs many chars; this
+  // stops junk/markup being stored. Output is HTML-escaped at render too.
+  const emoji = ((body.emoji || '✅').trim() || '✅').slice(0, 16);
   const color = (body.color || 'emerald').trim() || 'emerald';
 
   // schedule: array of weekday numbers (0=Sun … 6=Sat); default every day

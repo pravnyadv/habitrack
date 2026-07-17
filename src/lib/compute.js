@@ -191,7 +191,11 @@ const EXPORT_COLS = ['date', 'day_of_week', 'habit_name', 'habit_created_date', 
 
 export function toCSV(records) {
   const esc = (v) => {
-    const s = String(v);
+    let s = String(v);
+    // Neutralize spreadsheet formula injection: a field starting with = + - @ (or
+    // a leading tab/CR) can execute as a formula in Excel/Sheets. Prefix a quote
+    // so the value is treated as literal text.
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
   const lines = [EXPORT_COLS.join(',')];
