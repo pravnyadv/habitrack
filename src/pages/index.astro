@@ -207,9 +207,9 @@ const today = new Date().toLocaleDateString('en-US', {
       const list = document.getElementById('habit-list');
       const weekHead = document.getElementById('week-header');
 
-      // Shared 7-column grid so the header and every habit row line up exactly.
-      // Narrower day columns on mobile so the habit name keeps its room.
-      const GRID = 'grid grid-cols-[minmax(0,1fr)_repeat(7,1.7rem)] sm:grid-cols-[minmax(0,1fr)_repeat(7,2.25rem)] items-center gap-y-0';
+      // Mobile: 7 equal columns — the name sits on its own full-width row above
+      // the checks. Desktop (sm+): name column + 7 fixed day columns on one row.
+      const GRID = 'grid grid-cols-7 gap-y-1 sm:grid-cols-[minmax(0,1fr)_repeat(7,2.25rem)] sm:gap-y-0 items-center';
       const last7 = () => Array.from({ length: 7 }, (_, i) => addDays(TODAY, i - 6));
 
       const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="h-[18px] w-[18px]"><path d="M4.5 12.75l6 6 9-13.5"/></svg>';
@@ -224,7 +224,8 @@ const today = new Date().toLocaleDateString('en-US', {
               <span class="text-[11px] ${isToday ? 'font-semibold' : ''}">${dd.getDate()}</span>
             </div>`;
         }).join('');
-        weekHead.innerHTML = `<div class="${GRID}"><span></span>${cols}</div>`;
+        // leading empty cell only exists on desktop (name column)
+        weekHead.innerHTML = `<div class="${GRID}"><span class="hidden sm:block"></span>${cols}</div>`;
       }
 
       const REST = '<span class="h-1 w-1 rounded-full bg-slate-200 dark:bg-slate-700"></span>';
@@ -419,7 +420,7 @@ const today = new Date().toLocaleDateString('en-US', {
           return `
           <article class="rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-black/5 transition dark:bg-slate-900 dark:ring-white/10">
             <div class="${GRID}">
-              <button data-toggle="${h.id}" class="flex min-w-0 items-center gap-2 py-1.5 pr-2 text-left">
+              <button data-toggle="${h.id}" class="col-span-7 flex min-w-0 items-center gap-2 py-1.5 pr-2 text-left sm:col-span-1">
                 <span class="shrink-0 text-base">${h.emoji}</span>
                 <span class="truncate font-medium">${escapeHtml(h.name)}</span>
                 ${s.current > 0 ? `<span class="shrink-0 text-xs text-slate-400 dark:text-slate-500">🔥${s.current}</span>` : ''}
@@ -633,7 +634,7 @@ const today = new Date().toLocaleDateString('en-US', {
       // Returns 'ok' | 'unauthorized' | 'error'
       async function fetchHabits() {
         try {
-          const res = await fetch('/api/habits', { headers: authHeaders() });
+          const res = await fetch('/api/habits', { headers: authHeaders(), cache: 'no-store' });
           if (res.status === 401) return 'unauthorized';
           if (!res.ok) return 'error';
           habits = await res.json();
@@ -642,6 +643,19 @@ const today = new Date().toLocaleDateString('en-US', {
           return 'error';
         }
       }
+
+      // Keep the PWA fresh: iOS suspends the app and reopens to its frozen
+      // state, so re-pull whenever it becomes visible / is restored again.
+      async function refresh() {
+        if (!passcode) return;
+        const r = await fetchHabits();
+        if (r === 'ok') { render(); loadError.classList.add('hidden'); }
+        else if (r === 'unauthorized') { passcode = ''; localStorage.removeItem(PC_KEY); showGate(); }
+      }
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') refresh();
+      });
+      window.addEventListener('pageshow', (e) => { if (e.persisted) refresh(); });
 
       async function boot() {
         if (!passcode) { showGate(); return; }
