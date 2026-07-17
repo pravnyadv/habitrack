@@ -125,7 +125,9 @@ On any check-in / add / delete / edit (`update`) / reorder, the endpoint calls `
 
 ## PWA
 
-`public/manifest.webmanifest` + icons + `public/sw.js` (minimal network-first SW) make it installable. In-app install button (`#install-btn`) uses `beforeinstallprompt` (Chromium only; iOS is Share → Add to Home Screen). `robots.txt` blocks all; `noindex` meta.
+`public/manifest.webmanifest` + icons + `public/sw.js` make it installable. iOS install is Share → Add to Home Screen (the `#ios-install` hint banner); no in-app install button (rely on the browser's own install control). `robots.txt` blocks all; `noindex` meta.
+
+**Service worker (online-first).** The app is server-rendered/auth-gated/realtime, so the SW **never caches app HTML** — caching it broke reopen two ways: stale HTML pointing at old hashed `/_astro` assets (404 after a deploy → blank app), and *"a redirected response was used…"* errors when a signed-out `/` (302 → `/profile`) got cached/returned for a navigation. Strategy: **navigations go to the network** (via `navigationPreload` when supported; iOS falls back to `fetch`), redirected responses are handed back as a clean copy (avoids the navigation error), and network failure serves a static `public/offline.html`. Hashed assets + API calls pass through untouched. Bump the `CACHE` version (`habitrack-vN`) when changing the SW so `activate` purges old caches; `skipWaiting()` + `clients.claim()` take over on next launch.
 
 ## Commands
 
