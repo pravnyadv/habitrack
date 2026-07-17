@@ -825,8 +825,10 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         setTimeout(maybeShowIosHint, 1200); // let content paint first
       }
 
+      // Cookie-authed same-origin fetch — no localStorage token needed (an
+      // installed PWA often has none). Reload on a day rollover so dates are fresh.
       async function refresh() {
-        if (!token) return;
+        if (iso(new Date()) !== TODAY) { location.reload(); return; }
         const r = await fetchHabits();
         if (r === 'ok') { render(); loadError.classList.add('hidden'); }
         else if (r === 'unauthorized') { signOut(); }

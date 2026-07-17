@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import {
-  TODAY, addDays, schedOf, stats, windowStart, activeFromOf,
+  TODAY, iso, addDays, schedOf, stats, windowStart, activeFromOf,
   heatmapBlock, githubGraph, buildExportRecords, toCSV, toJSON, downloadFile, connectRealtime, apiFetch,
 } from '../lib/compute.js';
 
@@ -28,7 +28,9 @@ export default function Overview({ initialHabits = [], profileId }) {
     try { v = JSON.parse(localStorage.getItem(VIEW) || 'null'); } catch {}
     setViewing(v);
     const dataId = v ? v.id : profileId;
-    if (v) load(v.id); // viewing someone else — SSR gave us our own, fetch theirs
+    // Always fetch fresh on mount — the SSR snapshot can be stale on a long-lived
+    // PWA (which keeps the page in memory for days). Cookie-authed, no token needed.
+    load(v ? v.id : null);
     (async () => {
       try {
         const { ok, data: cfg } = await apiFetch('/api/rt-config');
@@ -36,9 +38,23 @@ export default function Overview({ initialHabits = [], profileId }) {
         await connectRealtime({ key: cfg.key, cluster: cfg.cluster, channel: `habitrack-${dataId}`, onEvent: () => load(v ? v.id : null) });
       } catch { /* best-effort */ }
     })();
+    // Seamless refresh when the app returns to the foreground (PWA has no
+    // pull-to-refresh); reload outright if the day rolled over so dates are fresh.
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (iso(new Date()) !== TODAY) { location.reload(); return; }
+      load(v ? v.id : null);
+    };
+    const onPageShow = (e) => { if (e.persisted) refresh(); };
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('pageshow', onPageShow);
     const close = () => setMenuOpen(false);
     document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
+    return () => {
+      document.removeEventListener('click', close);
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('pageshow', onPageShow);
+    };
   }, []);
 
   const agg = useMemo(() => {
