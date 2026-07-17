@@ -1,21 +1,31 @@
 ---
 import '../styles/global.css';
 import AppHeader from '../components/AppHeader.astro';
-import { getSql, listHabits } from '../lib/db.js';
+import { getSql, listHabits, getProfile } from '../lib/db.js';
 import { verifyToken, TOKEN_COOKIE } from '../lib/auth.js';
 
 // Middleware already guaranteed a valid session cookie for this route, so we can
 // fetch the signed-in profile's habits server-side and ship them in the HTML —
 // the app renders instantly with no empty→filled flash. (View-mode is a client
 // concept, so that rarer path still fetches; see boot().)
+// We also SSR the profile identity: iOS copies the session COOKIE into an
+// installed PWA but NOT localStorage, so the client's `profile` can be empty even
+// with a valid cookie — the client hydrates from this instead of bouncing away.
 const env = Astro.locals.runtime?.env;
 const token = Astro.cookies.get(TOKEN_COOKIE)?.value;
 let initialHabits = [];
+let initialProfile = null;
 try {
   const pid = token ? await verifyToken(token, env) : null;
-  if (pid) initialHabits = await listHabits(getSql(env), pid);
+  if (pid) {
+    const sql = getSql(env);
+    initialHabits = await listHabits(sql, pid);
+    const p = await getProfile(sql, pid);
+    if (p) initialProfile = { id: p.id, name: p.name, admin: !!p.is_admin };
+  }
 } catch { initialHabits = []; }
 const initialJson = JSON.stringify(initialHabits).replace(/</g, '\\u003c');
+const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
 ---
 
 <html lang="en" class="h-full">
@@ -169,6 +179,7 @@ const initialJson = JSON.stringify(initialHabits).replace(/</g, '\\u003c');
     </div>
 
     <script id="initial-habits" type="application/json" is:inline set:html={initialJson}></script>
+    <script id="initial-profile" type="application/json" is:inline set:html={profileJson}></script>
 
     <script>
       import { COLORS, COLORS_DARK, MONTHS, WD, TODAY, BACKFILL_DAYS, iso, pad2, addDays, dow, schedOf, stats, windowStart, heatmapBlock, githubGraph, escapeHtml, connectRealtime, apiFetch } from '../lib/compute.js';
@@ -204,6 +215,17 @@ const initialJson = JSON.stringify(initialHabits).replace(/</g, '\\u003c');
       let token = localStorage.getItem(TK) || '';
       let profile = null; // { id, name }
       try { profile = JSON.parse(localStorage.getItem(PID) || 'null'); } catch {}
+      // PWA: the cookie can be valid (server let us in) while localStorage is empty
+      // (iOS copies cookies into an installed app, not localStorage). Hydrate the
+      // profile from the SSR'd, cookie-derived identity so we don't bounce to
+      // /profile. Same-origin API calls authenticate on the cookie, so a missing
+      // token is fine.
+      if (!profile) {
+        try {
+          const ssr = JSON.parse(document.getElementById('initial-profile')?.textContent || 'null');
+          if (ssr) { profile = ssr; localStorage.setItem(PID, JSON.stringify(ssr)); }
+        } catch {}
+      }
       // When set ({id,name}), the app shows this shared profile read-only instead
       // of our own. Persisted so it survives the reload used to rebind realtime.
       let viewing = null;
