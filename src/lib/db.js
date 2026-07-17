@@ -20,8 +20,7 @@ export async function listHabits(sql) {
            COALESCE(
              (SELECT json_agg(c.day ORDER BY c.day)
               FROM checkins c
-              WHERE c.habit_id = h.id
-                AND c.day >= CURRENT_DATE - INTERVAL '400 days'),
+              WHERE c.habit_id = h.id),
              '[]'::json
            ) AS days
     FROM habits h

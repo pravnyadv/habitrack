@@ -250,73 +250,68 @@ const today = new Date().toLocaleDateString('en-US', {
         }).join('');
       }
 
-      // Monday-of-current-week helper (weeks are Mon→Sun columns)
-      function mondayThisWeek() {
-        const dow = (new Date(TODAY + 'T00:00:00').getDay() + 6) % 7; // 0=Mon..6=Sun
-        return addDays(TODAY, -dow);
+      // ---- LEVEL 1: single-month calendar (current month by default) ---------
+      const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const calView = new Map(); // habitId -> {y, m} of the month being viewed
+      function getCalView(id) {
+        if (!calView.has(id)) {
+          const d = new Date(TODAY + 'T00:00:00');
+          calView.set(id, { y: d.getFullYear(), m: d.getMonth() });
+        }
+        return calView.get(id);
       }
 
-      // ---- LEVEL 1: dated calendar grid (interactive overview) ---------------
-      const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       function calendarGrid(habit) {
+        const { y, m } = getCalView(habit.id);
         const set = new Set(habit.days);
         const sched = schedOf(habit);
         const color = COLORS[habit.color] || COLORS.emerald;
-        const WEEKS = 20;
-        const mon = mondayThisWeek();
+        const t = new Date(TODAY + 'T00:00:00');
+        const atCurrent = (y === t.getFullYear() && m === t.getMonth());
+        const monthLabel = new Date(y, m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-        // per-column month info + where a new month begins (keyed off that week's Monday)
-        const col = [];
-        for (let w = 0; w < WEEKS; w++) {
-          const start = new Date(addDays(mon, -(WEEKS - 1 - w) * 7) + 'T00:00:00');
-          col.push({ m: start.getMonth(), y: start.getFullYear(), start });
-        }
-        const isMonthStart = (w) => w === 0 || col[w].m !== col[w - 1].m;
-        // a subtle divider on the first column of each new month
-        const div = (w) => (isMonthStart(w) && w > 0) ? 'border-l border-slate-200 dark:border-slate-700' : '';
+        const firstDow = (new Date(y, m, 1).getDay() + 6) % 7; // Mon=0
+        const daysInMonth = new Date(y, m + 1, 0).getDate();
 
-        // month labels row
-        let months = '';
-        for (let w = 0; w < WEEKS; w++) {
-          let label = '';
-          if (isMonthStart(w)) {
-            label = col[w].start.toLocaleDateString('en-US', { month: 'short' });
-            if (w === 0 || col[w].y !== col[w - 1].y) label += " '" + String(col[w].y).slice(2);
-          }
-          months += `<div class="w-8 shrink-0 pl-0.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 ${div(w)}">${label}</div>`;
-        }
+        const wdRow = WD.map((w) => `<div class="text-center text-[11px] font-medium text-slate-400 dark:text-slate-500">${w}</div>`).join('');
 
-        // 7 weekday rows × WEEKS columns
-        let rows = '';
-        for (let r = 0; r < 7; r++) {
-          let cells = '';
-          for (let w = 0; w < WEEKS; w++) {
-            const d = addDays(addDays(mon, -(WEEKS - 1 - w) * 7), r);
-            const num = new Date(d + 'T00:00:00').getDate();
-            const dv = div(w);
-            if (d > TODAY) { cells += `<span class="h-8 w-8 shrink-0 ${dv}"></span>`; continue; }
-            if (!sched.has(dow(d))) {
-              cells += `<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs tabular-nums text-slate-300 dark:text-slate-700 ${dv}" title="${d} · rest day">${num}</span>`;
-              continue;
-            }
-            const done = set.has(d);
-            const isToday = d === TODAY;
-            cells += `<button data-day="${d}" data-habit="${habit.id}"
-              class="day h-8 w-8 shrink-0 rounded-lg text-xs font-medium tabular-nums transition active:scale-90 ${dv}
-                ${done ? 'text-white' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}
-                ${isToday ? 'ring-2 ring-offset-1 ring-offset-white dark:ring-offset-slate-900' : ''}"
+        let cells = '';
+        for (let i = 0; i < firstDow; i++) cells += '<div class="h-10"></div>';
+        for (let d = 1; d <= daysInMonth; d++) {
+          const ds = `${y}-${pad2(m + 1)}-${pad2(d)}`;
+          const future = ds > TODAY;
+          const scheduled = sched.has(new Date(y, m, d).getDay());
+          const done = set.has(ds);
+          const isToday = ds === TODAY;
+          if (future) {
+            cells += `<div class="flex h-10 items-center justify-center text-sm tabular-nums text-slate-200 dark:text-slate-700">${d}</div>`;
+          } else if (!scheduled) {
+            cells += `<div class="flex h-10 items-center justify-center text-sm tabular-nums text-slate-300 dark:text-slate-700" title="${ds} · rest day">${d}</div>`;
+          } else {
+            cells += `<button data-day="${ds}" data-habit="${habit.id}"
+              class="day flex h-10 items-center justify-center rounded-lg text-sm font-medium tabular-nums transition active:scale-90
+                ${done ? 'text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}
+                ${isToday ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-900' : ''}"
               style="${done ? `background:${color}` : ''};${isToday ? `--tw-ring-color:${color}` : ''}"
-              title="${d}">${num}</button>`;
+              title="${ds}">${d}</button>`;
           }
-          rows += `<div class="flex items-center gap-1">${cells}<span class="ml-1 w-9 text-[11px] font-medium text-slate-400 dark:text-slate-500">${WD[r]}</span></div>`;
         }
+
+        const arrowBtn = (dir, attr) => `<button ${attr} aria-label="${dir === 'prev' ? 'Previous' : 'Next'} month"
+            class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="${dir === 'prev' ? 'M15.75 19.5 8.25 12l7.5-7.5' : 'm8.25 4.5 7.5 7.5-7.5 7.5'}"/></svg>
+          </button>`;
 
         return `
-          <div class="overflow-x-auto no-scrollbar">
-            <div class="inline-block min-w-full">
-              <div class="mb-1.5 flex gap-1">${months}</div>
-              <div class="flex flex-col gap-1">${rows}</div>
+          <div>
+            <div class="mb-3 flex items-center justify-between">
+              ${arrowBtn('prev', `data-cal-prev="${habit.id}"`)}
+              <span class="text-sm font-semibold">${monthLabel}</span>
+              ${atCurrent ? '<span class="h-8 w-8" aria-hidden="true"></span>' : arrowBtn('next', `data-cal-next="${habit.id}"`)}
             </div>
+            <div class="grid grid-cols-7 gap-1">${wdRow}</div>
+            <div class="mt-1 grid grid-cols-7 gap-1">${cells}</div>
           </div>`;
       }
 
@@ -484,6 +479,28 @@ const today = new Date().toLocaleDateString('en-US', {
         if (statsBtn) {
           const id = Number(statsBtn.dataset.stats);
           statsOpen.has(id) ? statsOpen.delete(id) : statsOpen.add(id);
+          render();
+          return;
+        }
+        const calPrev = e.target.closest('[data-cal-prev]');
+        if (calPrev) {
+          const id = Number(calPrev.dataset.calPrev);
+          const v = getCalView(id);
+          let m = v.m - 1, y = v.y;
+          if (m < 0) { m = 11; y--; }        // roll back across the year
+          calView.set(id, { y, m });
+          render();
+          return;
+        }
+        const calNext = e.target.closest('[data-cal-next]');
+        if (calNext) {
+          const id = Number(calNext.dataset.calNext);
+          const v = getCalView(id);
+          let m = v.m + 1, y = v.y;
+          if (m > 11) { m = 0; y++; }         // roll forward across the year
+          const t = new Date(TODAY + 'T00:00:00');
+          if (y > t.getFullYear() || (y === t.getFullYear() && m > t.getMonth())) return; // never past current month
+          calView.set(id, { y, m });
           render();
           return;
         }
