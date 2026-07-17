@@ -78,11 +78,18 @@ const today = new Date().toLocaleDateString('en-US', {
           </h1>
           <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{today}</p>
         </div>
-        <button id="theme-toggle" aria-label="Toggle theme"
-          class="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
-          <svg class="hidden h-5 w-5 dark:block" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>
-          <svg class="block h-5 w-5 dark:hidden" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>
-        </button>
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <select id="year-select" aria-label="Year"
+              class="cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-medium text-slate-500 shadow-sm outline-none transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white"></select>
+            <svg class="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
+          </div>
+          <button id="theme-toggle" aria-label="Toggle theme"
+            class="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
+            <svg class="hidden h-5 w-5 dark:block" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>
+            <svg class="block h-5 w-5 dark:hidden" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>
+          </button>
+        </div>
       </header>
 
       <div id="load-error" class="mb-6 hidden rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300">
@@ -147,6 +154,8 @@ const today = new Date().toLocaleDateString('en-US', {
       let habits = [];
       const expanded = new Set();
       let pendingDelete = null;
+      const CURRENT_YEAR = Number(TODAY.slice(0, 4));
+      let activeYear = CURRENT_YEAR; // the year the calendar + graph are scoped to
 
       // ---- passcode (stored in localStorage, sent as a header) ----------------
       const PC_KEY = 'habitrack_passcode';
@@ -255,8 +264,9 @@ const today = new Date().toLocaleDateString('en-US', {
       const calView = new Map(); // habitId -> {y, m} of the month being viewed
       function getCalView(id) {
         if (!calView.has(id)) {
-          const d = new Date(TODAY + 'T00:00:00');
-          calView.set(id, { y: d.getFullYear(), m: d.getMonth() });
+          // current month for this year; December for a past year
+          const m = activeYear === CURRENT_YEAR ? new Date(TODAY + 'T00:00:00').getMonth() : 11;
+          calView.set(id, { y: activeYear, m });
         }
         return calView.get(id);
       }
@@ -317,56 +327,46 @@ const today = new Date().toLocaleDateString('en-US', {
       }
 
       // ---- LEVEL 2: GitHub-style contribution graph (analytic) ---------------
+      const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      // Full calendar-year heatmap for the selected year. Fits the width (no
+      // horizontal scroll) via an aspect-ratio grid, so nothing hides off-screen.
       function githubGraph(habit) {
         const set = new Set(habit.days);
-        const color = COLORS[habit.color] || COLORS.emerald;
-        const WEEKS = 53;
-        // Sunday-first rows, like GitHub
-        const todayDate = new Date(TODAY + 'T00:00:00');
-        const startOffset = (WEEKS - 1) * 7 + todayDate.getDay();
-
-        // month labels across the top
-        let months = '', prevMonth = -1;
-        for (let w = 0; w < WEEKS; w++) {
-          const d = new Date(addDays(TODAY, -(startOffset - w * 7)) + 'T00:00:00');
-          let label = '';
-          if (d.getMonth() !== prevMonth) { label = d.toLocaleDateString('en-US', { month: 'short' }); prevMonth = d.getMonth(); }
-          months += `<div class="w-[13px] shrink-0 text-[9px] leading-none text-slate-400 dark:text-slate-500">${label}</div>`;
-        }
-
         const sched = schedOf(habit);
-        let cols = '';
-        for (let w = 0; w < WEEKS; w++) {
-          let cells = '';
-          for (let wd = 0; wd < 7; wd++) {   // Sunday-first, so wd === JS weekday number
-            const d = addDays(TODAY, -(startOffset - (w * 7 + wd)));
-            const future = d > TODAY;
-            const done = set.has(d);
-            const rest = !sched.has(wd);     // not scheduled → lighter, not "missed"
-            const bg = future ? 'opacity-0' : (done ? '' : (rest ? 'bg-slate-50 dark:bg-slate-800/40' : 'bg-slate-100 dark:bg-slate-800'));
-            cells += `<span class="h-[10px] w-[10px] rounded-[2px] ${bg}"
-              style="${done ? `background:${color}` : ''}" title="${d}${done ? ' · done' : (rest ? ' · rest day' : '')}"></span>`;
-          }
-          cols += `<div class="flex flex-col gap-[3px]">${cells}</div>`;
+        const color = COLORS[habit.color] || COLORS.emerald;
+        const yr = activeYear;
+
+        const jan1 = new Date(yr, 0, 1);
+        const gridStart = new Date(yr, 0, 1 - jan1.getDay());        // Sunday on/before Jan 1
+        const dec31 = new Date(yr, 11, 31);
+        const gridEnd = new Date(yr, 11, 31 + (6 - dec31.getDay())); // Saturday on/after Dec 31
+        const totalDays = Math.round((gridEnd - gridStart) / 86400000) + 1;
+        const weeks = Math.round(totalDays / 7);
+
+        let cells = '', count = 0;
+        for (let i = 0; i < totalDays; i++) {
+          const dt = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
+          const ds = iso(dt);
+          const inYear = dt.getFullYear() === yr;
+          const future = ds > TODAY;
+          const done = set.has(ds);
+          if (inYear && done) count++;
+          let cls = 'rounded-[1px] ', style = '';
+          if (!inYear || future) cls += 'opacity-0';
+          else if (done) style = `background:${color}`;
+          else if (!sched.has(dt.getDay())) cls += 'bg-slate-100/70 dark:bg-slate-800/40'; // rest day
+          else cls += 'bg-slate-200/80 dark:bg-slate-800';                                  // missed
+          cells += `<span class="${cls}" style="${style}" title="${inYear ? ds + (done ? ' · done' : '') : ''}"></span>`;
         }
 
-        const yearAgo = addDays(TODAY, -371);
-        const total = habit.days.filter((d) => d >= yearAgo).length;
         return `
-          <div class="gh-scroll overflow-x-auto no-scrollbar">
-            <p class="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">${total} check-in${total === 1 ? '' : 's'} in the last year</p>
-            <div class="inline-block">
-              <div class="mb-1 flex gap-[3px] pl-6">${months}</div>
-              <div class="flex gap-1">
-                <div class="flex w-5 flex-col gap-[3px] pt-[13px] text-[9px] leading-[10px] text-slate-400 dark:text-slate-500">
-                  <span class="h-[10px]">Mon</span><span class="h-[13px]"></span><span class="h-[10px]">Wed</span><span class="h-[13px]"></span><span class="h-[10px]">Fri</span>
-                </div>
-                <div class="flex gap-[3px]">${cols}</div>
-              </div>
-            </div>
+          <div>
+            <p class="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">${count} check-in${count === 1 ? '' : 's'} in ${yr}</p>
+            <div class="flex justify-between px-px text-[9px] leading-none text-slate-400 dark:text-slate-500">${MONTHS.map((m) => `<span>${m}</span>`).join('')}</div>
+            <div class="mt-1 grid gap-[2px]" style="grid-auto-flow:column;grid-template-rows:repeat(7,1fr);grid-auto-columns:minmax(0,1fr);aspect-ratio:${weeks}/7">${cells}</div>
             <div class="mt-2 flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-slate-500">
               <span>Missed</span>
-              <span class="h-[10px] w-[10px] rounded-[2px] bg-slate-100 dark:bg-slate-800"></span>
+              <span class="h-[10px] w-[10px] rounded-[2px] bg-slate-200/80 dark:bg-slate-800"></span>
               <span class="h-[10px] w-[10px] rounded-[2px]" style="background:${color}"></span>
               <span>Done</span>
             </div>
@@ -421,10 +421,22 @@ const today = new Date().toLocaleDateString('en-US', {
             ${isOpen ? overviewPanel(h) : ''}
           </article>`;
         }).join('');
-        // start the contribution graph at the most recent week so today's
-        // check-ins are visible instead of last year's empty months
-        list.querySelectorAll('.gh-scroll').forEach((el) => { el.scrollLeft = el.scrollWidth; });
         renderTodayCard();
+        renderYearSelect();
+      }
+
+      // years present in the data, plus the current year, newest first
+      function renderYearSelect() {
+        const sel = document.getElementById('year-select');
+        const years = new Set([CURRENT_YEAR]);
+        for (const h of habits) for (const d of h.days) years.add(Number(d.slice(0, 4)));
+        const opts = [...years].sort((a, b) => b - a);
+        const sig = opts.join(',');
+        if (sel.dataset.sig !== sig) {
+          sel.innerHTML = opts.map((y) => `<option value="${y}">${y}</option>`).join('');
+          sel.dataset.sig = sig;
+        }
+        sel.value = String(activeYear);
       }
 
       function renderTodayCard() {
@@ -613,6 +625,14 @@ const today = new Date().toLocaleDateString('en-US', {
         const form = document.getElementById('habit-form');
         const hidden = form.classList.toggle('hidden');
         if (!hidden) document.getElementById('habit-name').focus();
+      });
+
+      // ---- year selector -----------------------------------------------------
+      document.getElementById('year-select').addEventListener('change', (e) => {
+        activeYear = Number(e.target.value);
+        calView.clear();          // calendars re-default into the chosen year
+        expanded.clear();         // collapse open panels so the change is clear
+        render();
       });
 
       // ---- theme toggle ------------------------------------------------------
