@@ -110,6 +110,10 @@ export default function Overview({ initialHabits = [], profileId }) {
     return { avg, perfect, longest, heat };
   }, [habits, filter]);
 
+  useEffect(() => {
+    if (agg) dbg('agg', { filter, habitsLen: habits.length, avg: agg.avg, perfect: agg.perfect, count: (String(agg.heat).match(/(\d+)\s+check-in/) || [])[1] });
+  }, [agg]);
+
   function exportRecords(kind) {
     setMenuOpen(false);
     const records = buildExportRecords(habits);
