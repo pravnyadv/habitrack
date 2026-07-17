@@ -15,9 +15,13 @@ export default function Overview({ initialHabits = [], profileId }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [viewing, setViewing] = useState(null); // resolved client-side (localStorage)
 
+  const dbg = (tag, extra) => { try { apiFetch('/api/dbg', { method: 'POST', body: { tag, ...extra } }); } catch {} };
+  const sumHabits = (hs) => (hs || []).map((h) => ({ n: h.name, days: (h.days || []).length, first: (h.days || [])[0], ct: h.created_at }));
+
   async function load(viewId) {
     const url = viewId ? `/api/habits?profile=${viewId}` : '/api/habits';
     const { ok, status, data } = await apiFetch(url);
+    dbg('load', { url, ok, status, habits: sumHabits(data) });
     if (status === 401) { location.href = '/profile'; return; }
     if (status === 403) { localStorage.removeItem(VIEW); location.href = '/'; return; }
     if (ok) setHabits(data);
@@ -26,6 +30,7 @@ export default function Overview({ initialHabits = [], profileId }) {
   useEffect(() => {
     let v = null;
     try { v = JSON.parse(localStorage.getItem(VIEW) || 'null'); } catch {}
+    dbg('mount', { TODAY, earliest: windowStart(), viewing: v, initial: sumHabits(initialHabits) });
     setViewing(v);
     const dataId = v ? v.id : profileId;
     // Always fetch fresh on mount — the SSR snapshot can be stale on a long-lived
