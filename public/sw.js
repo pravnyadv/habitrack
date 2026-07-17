@@ -1,33 +1,48 @@
-// Minimal service worker — enables PWA installability (the browser's address-bar
-// install icon needs a registered SW with a fetch handler) and a light offline
-// shell. Network-first for navigations so online users always get fresh code;
-// API responses (Cache-Control: no-store) are never cached.
-const CACHE = 'habitrack-v1';
+// Service worker — enables installability and a minimal offline fallback.
+//
+// Habitrack is an online-first app (server-rendered per request, auth-gated,
+// realtime + Neon), so we deliberately DO NOT cache app HTML: caching it caused
+// two reopen bugs — (1) stale HTML pointing at old hashed /_astro assets that
+// 404 after a deploy, and (2) "a redirected response was used…" errors when a
+// signed-out `/` (302 → /profile) got cached/returned for a navigation.
+//
+// Strategy: navigations go to the network (via navigation preload when
+// available), always fresh; if the network is unreachable we show a small
+// static offline page. Hashed assets and API calls are left to the browser.
+const CACHE = 'habitrack-v2';
+const OFFLINE_URL = '/offline.html';
 
-self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(CACHE).then((c) => c.add(OFFLINE_URL)).then(() => self.skipWaiting()));
+});
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  e.waitUntil((async () => {
+    // Faster SW-controlled navigations (no-op on browsers without support, e.g. iOS).
+    if (self.registration.navigationPreload) await self.registration.navigationPreload.enable();
+    // Purge any old (v1) caches that may hold stale HTML.
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET') return; // never touch writes/logins
-  if (req.mode === 'navigate') {
-    e.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
-          return res;
-        })
-        .catch(() => caches.match(req).then((r) => r || caches.match('/')))
-    );
-  }
-  // other GETs (hashed assets) pass through normally — the handler's presence
-  // is what makes the app installable.
+  if (req.method !== 'GET' || req.mode !== 'navigate') return; // assets/APIs: normal network
+  e.respondWith((async () => {
+    try {
+      const res = (await e.preloadResponse) || (await fetch(req));
+      // A response that already followed a redirect can't be returned for a
+      // navigation in some browsers — hand back a clean copy so launch never errors.
+      if (res && res.redirected) {
+        return new Response(await res.clone().blob(), {
+          status: res.status, statusText: res.statusText, headers: res.headers,
+        });
+      }
+      return res;
+    } catch {
+      return (await caches.match(OFFLINE_URL)) || Response.error();
+    }
+  })());
 });

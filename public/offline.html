@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Offline — Habitrack</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <style>
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 20px; padding: 24px;
+        font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+        text-align: center; background: #f8fafc; color: #0f172a;
+      }
+      .logo {
+        width: 56px; height: 56px; border-radius: 14px;
+        background: linear-gradient(135deg, #10b981, #059669);
+        display: flex; align-items: center; justify-content: center;
+      }
+      h1 { margin: 0; font-size: 20px; font-weight: 700; }
+      p { margin: 0; max-width: 22rem; font-size: 14px; line-height: 1.5; color: #64748b; }
+      button {
+        margin-top: 4px; padding: 10px 20px; border: 0; border-radius: 12px;
+        background: #10b981; color: #fff; font-size: 14px; font-weight: 600;
+        font-family: inherit; cursor: pointer;
+      }
+      button:active { transform: scale(0.96); }
+      @media (prefers-color-scheme: dark) {
+        body { background: #020617; color: #f1f5f9; }
+        p { color: #94a3b8; }
+      }
+    </style>
+  </head>
+  <body>
+    <span class="logo" aria-hidden="true">
+      <svg width="32" height="32" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="256" cy="256" r="150" fill="none" stroke="#ffffff" stroke-opacity="0.3" stroke-width="26" />
+        <circle cx="256" cy="256" r="150" fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-dasharray="707 235" transform="rotate(-90 256 256)" />
+        <path d="M196 260 L240 304 L322 212" fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </span>
+    <h1>You're offline</h1>
+    <p>Habitrack needs a connection to sync your habits. Reconnect and try again.</p>
+    <button onclick="location.reload()">Try again</button>
+  </body>
+</html>
