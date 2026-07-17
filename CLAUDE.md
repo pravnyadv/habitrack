@@ -36,7 +36,7 @@ wrangler.jsonc           # Pages config (account_id, nodejs_compat, dist)
 Read from the **Workers runtime env** per request, never `process.env` at module load.
 
 - `NEON_DB` — Postgres connection string.
-- `APP_PASSCODE` — the shared passcode gate (currently `habits20206`).
+- `APP_PASSCODE` — the shared passcode gate (currently `habits2026`).
 
 Access pattern: endpoints get `locals.runtime.env`; pass it to `getSql(env)` / `isAuthed(request, env)`.
 

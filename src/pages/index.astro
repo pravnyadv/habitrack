@@ -52,6 +52,18 @@ const today = new Date().toLocaleDateString('en-US', {
       </div>
     </div>
 
+    <!-- Delete confirmation -->
+    <div id="confirm-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 px-6 backdrop-blur-sm">
+      <div class="w-full max-w-xs rounded-2xl bg-white p-5 shadow-xl dark:bg-slate-900">
+        <p class="text-base font-semibold">Delete habit?</p>
+        <p id="confirm-text" class="mt-1.5 text-sm text-slate-500 dark:text-slate-400"></p>
+        <div class="mt-5 flex gap-2">
+          <button id="confirm-cancel" class="h-10 flex-1 rounded-xl bg-slate-100 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 active:scale-95 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cancel</button>
+          <button id="confirm-delete" class="h-10 flex-1 rounded-xl bg-rose-500 text-sm font-semibold text-white transition hover:bg-rose-600 active:scale-95">Delete</button>
+        </div>
+      </div>
+    </div>
+
     <div class="mx-auto max-w-2xl px-4 pb-24 pt-8 sm:pt-12">
 
       <!-- Header -->
@@ -135,6 +147,7 @@ const today = new Date().toLocaleDateString('en-US', {
       let habits = [];
       const expanded = new Set();
       const statsOpen = new Set();
+      let pendingDelete = null;
 
       // ---- passcode (stored in localStorage, sent as a header) ----------------
       const PC_KEY = 'habitrack_passcode';
@@ -195,7 +208,8 @@ const today = new Date().toLocaleDateString('en-US', {
       const weekHead = document.getElementById('week-header');
 
       // Shared 7-column grid so the header and every habit row line up exactly.
-      const GRID = 'grid grid-cols-[minmax(0,1fr)_repeat(7,2.25rem)] items-center gap-y-0';
+      // Narrower day columns on mobile so the habit name keeps its room.
+      const GRID = 'grid grid-cols-[minmax(0,1fr)_repeat(7,1.7rem)] sm:grid-cols-[minmax(0,1fr)_repeat(7,2.25rem)] items-center gap-y-0';
       const last7 = () => Array.from({ length: 7 }, (_, i) => addDays(TODAY, i - 6));
 
       const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="h-[18px] w-[18px]"><path d="M4.5 12.75l6 6 9-13.5"/></svg>';
@@ -473,12 +487,33 @@ const today = new Date().toLocaleDateString('en-US', {
         const del = e.target.closest('[data-delete]');
         if (del) {
           const id = Number(del.dataset.delete);
-          habits = habits.filter((h) => h.id !== id);
-          expanded.delete(id);
-          render();
-          await fetch('/api/habits/' + id, { method: 'DELETE', headers: authHeaders() });
+          const habit = habits.find((h) => h.id === id);
+          pendingDelete = id;
+          document.getElementById('confirm-text').textContent =
+            `This permanently deletes “${habit ? habit.name : 'this habit'}” and all its check-ins. This can't be undone.`;
+          showConfirm();
           return;
         }
+      });
+
+      async function doDelete(id) {
+        habits = habits.filter((h) => h.id !== id);
+        expanded.delete(id);
+        statsOpen.delete(id);
+        render();
+        await fetch('/api/habits/' + id, { method: 'DELETE', headers: authHeaders() });
+      }
+
+      // ---- delete confirmation modal ----------------------------------------
+      const confirmModal = document.getElementById('confirm-modal');
+      function showConfirm() { confirmModal.classList.remove('hidden'); confirmModal.classList.add('flex'); }
+      function hideConfirm() { confirmModal.classList.add('hidden'); confirmModal.classList.remove('flex'); pendingDelete = null; }
+      document.getElementById('confirm-cancel').addEventListener('click', hideConfirm);
+      confirmModal.addEventListener('click', (e) => { if (e.target === confirmModal) hideConfirm(); });
+      document.getElementById('confirm-delete').addEventListener('click', async () => {
+        const id = pendingDelete;
+        hideConfirm();
+        if (id != null) await doDelete(id);
       });
 
       // ---- add habit ---------------------------------------------------------
