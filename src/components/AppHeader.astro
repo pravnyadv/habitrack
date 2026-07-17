@@ -12,7 +12,7 @@ const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: '
 <header class="mb-8 flex items-center justify-between gap-3">
   <div class="min-w-0">
     <h1 class="flex items-center gap-2 text-2xl font-bold tracking-tight">
-      <a href="/" class="flex items-center gap-2 transition hover:opacity-80">
+      <a href="/" data-home class="flex items-center gap-2 transition hover:opacity-80">
         <span class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[7px]">
           <svg viewBox="0 0 512 512" class="h-full w-full" xmlns="http://www.w3.org/2000/svg">
             <defs><linearGradient id="logo-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#10b981"/><stop offset="1" stop-color="#059669"/></linearGradient></defs>
@@ -66,7 +66,7 @@ const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: '
   </div>
   <div class="flex shrink-0 items-center gap-2">
     {showHabits && (
-      <a href="/" aria-label="Back to habits" title="Back to habits"
+      <a href="/" data-home aria-label="Back to habits" title="Back to habits"
         class="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
         Back
@@ -93,6 +93,24 @@ const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: '
   const read = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } };
   const profile = read(PID);
   const viewing = read(VIEW);
+
+  // PWA home-nav fix: "/" is gated by middleware on the httpOnly session cookie,
+  // but installed PWAs (iOS/Safari) can lose that cookie while localStorage keeps
+  // the token — so a plain nav to "/" bounces back to /profile. In standalone
+  // mode, refresh the cookie from the token (via /api/session) *before* going
+  // home, so the gate passes. Browsers keep the cookie fine → instant nav.
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  if (standalone) {
+    for (const a of document.querySelectorAll('a[data-home]')) {
+      a.addEventListener('click', async (e) => {
+        const token = localStorage.getItem(TK);
+        if (!token) return; // no token → let it fall through to the picker
+        e.preventDefault();
+        try { await fetch('/api/session', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }); } catch { /* go anyway */ }
+        location.href = '/';
+      });
+    }
+  }
 
   document.getElementById('theme-toggle')?.addEventListener('click', () => {
     const dark = document.documentElement.classList.toggle('dark');
