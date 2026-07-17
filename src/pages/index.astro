@@ -146,7 +146,6 @@ const today = new Date().toLocaleDateString('en-US', {
 
       let habits = [];
       const expanded = new Set();
-      const statsOpen = new Set();
       let pendingDelete = null;
 
       // ---- passcode (stored in localStorage, sent as a header) ----------------
@@ -276,8 +275,10 @@ const today = new Date().toLocaleDateString('en-US', {
 
         const wdRow = WD.map((w) => `<div class="text-center text-[11px] font-medium text-slate-400 dark:text-slate-500">${w}</div>`).join('');
 
+        // centered square cells (36px) so done days read as tiles, not tall pills
+        const cellBase = 'mx-auto flex h-9 w-9 items-center justify-center rounded-lg text-sm tabular-nums';
         let cells = '';
-        for (let i = 0; i < firstDow; i++) cells += '<div class="h-10"></div>';
+        for (let i = 0; i < firstDow; i++) cells += '<div class="h-9"></div>';
         for (let d = 1; d <= daysInMonth; d++) {
           const ds = `${y}-${pad2(m + 1)}-${pad2(d)}`;
           const future = ds > TODAY;
@@ -285,12 +286,12 @@ const today = new Date().toLocaleDateString('en-US', {
           const done = set.has(ds);
           const isToday = ds === TODAY;
           if (future) {
-            cells += `<div class="flex h-10 items-center justify-center text-sm tabular-nums text-slate-200 dark:text-slate-700">${d}</div>`;
+            cells += `<div class="${cellBase} text-slate-200 dark:text-slate-700">${d}</div>`;
           } else if (!scheduled) {
-            cells += `<div class="flex h-10 items-center justify-center text-sm tabular-nums text-slate-300 dark:text-slate-700" title="${ds} · rest day">${d}</div>`;
+            cells += `<div class="${cellBase} text-slate-300 dark:text-slate-700" title="${ds} · rest day">${d}</div>`;
           } else {
             cells += `<button data-day="${ds}" data-habit="${habit.id}"
-              class="day flex h-10 items-center justify-center rounded-lg text-sm font-medium tabular-nums transition active:scale-90
+              class="day ${cellBase} font-medium transition active:scale-90
                 ${done ? 'text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}
                 ${isToday ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-900' : ''}"
               style="${done ? `background:${color}` : ''};${isToday ? `--tw-ring-color:${color}` : ''}"
@@ -349,9 +350,10 @@ const today = new Date().toLocaleDateString('en-US', {
           cols += `<div class="flex flex-col gap-[3px]">${cells}</div>`;
         }
 
-        const total = habit.days.length;
+        const yearAgo = addDays(TODAY, -371);
+        const total = habit.days.filter((d) => d >= yearAgo).length;
         return `
-          <div class="overflow-x-auto no-scrollbar">
+          <div class="gh-scroll overflow-x-auto no-scrollbar">
             <p class="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">${total} check-in${total === 1 ? '' : 's'} in the last year</p>
             <div class="inline-block">
               <div class="mb-1 flex gap-[3px] pl-6">${months}</div>
@@ -373,7 +375,6 @@ const today = new Date().toLocaleDateString('en-US', {
 
       // ---- expanded panel: overview (calendar) + optional stats -------------
       function overviewPanel(habit) {
-        const showStats = statsOpen.has(habit.id);
         const s = stats(habit);
         const cell = (label, val) => `
           <div class="rounded-xl bg-slate-50 px-3 py-2.5 text-center dark:bg-slate-800/50">
@@ -382,26 +383,18 @@ const today = new Date().toLocaleDateString('en-US', {
           </div>`;
 
         return `
-          <div class="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+          <div class="mt-5 border-t border-slate-100 pt-5 dark:border-slate-800">
             ${calendarGrid(habit)}
-            <div class="mt-4 flex items-center justify-between">
-              <button data-stats="${habit.id}"
-                class="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
-                <svg class="h-3.5 w-3.5 transition ${showStats ? 'rotate-180' : ''}" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
-                ${showStats ? 'Hide stats' : 'View stats'}
-              </button>
-              <button data-delete="${habit.id}" class="rounded-lg px-3 py-1.5 text-xs font-medium text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-950/40">Delete</button>
+            <div class="mt-6 grid grid-cols-4 gap-2">
+              ${cell('Streak', s.current)}
+              ${cell('Best', s.longest)}
+              ${cell('Total', s.total)}
+              ${cell('30-day', s.rate30 + '%')}
             </div>
-            ${showStats ? `
-              <div class="mt-4 space-y-4 rounded-xl bg-slate-50/60 p-4 dark:bg-slate-800/30">
-                <div class="grid grid-cols-4 gap-2">
-                  ${cell('Streak', s.current)}
-                  ${cell('Best', s.longest)}
-                  ${cell('Total', s.total)}
-                  ${cell('30-day', s.rate30 + '%')}
-                </div>
-                ${githubGraph(habit)}
-              </div>` : ''}
+            <div class="mt-5">${githubGraph(habit)}</div>
+            <div class="mt-5 flex justify-end border-t border-slate-100 pt-4 dark:border-slate-800">
+              <button data-delete="${habit.id}" class="rounded-lg px-3 py-1.5 text-xs font-medium text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-950/40">Delete habit</button>
+            </div>
           </div>`;
       }
 
@@ -428,6 +421,9 @@ const today = new Date().toLocaleDateString('en-US', {
             ${isOpen ? overviewPanel(h) : ''}
           </article>`;
         }).join('');
+        // start the contribution graph at the most recent week so today's
+        // check-ins are visible instead of last year's empty months
+        list.querySelectorAll('.gh-scroll').forEach((el) => { el.scrollLeft = el.scrollWidth; });
         renderTodayCard();
       }
 
@@ -470,15 +466,8 @@ const today = new Date().toLocaleDateString('en-US', {
         const toggle = e.target.closest('[data-toggle]');
         if (toggle) {
           const id = Number(toggle.dataset.toggle);
-          if (expanded.has(id)) { expanded.delete(id); statsOpen.delete(id); }
+          if (expanded.has(id)) expanded.delete(id);
           else expanded.add(id);
-          render();
-          return;
-        }
-        const statsBtn = e.target.closest('[data-stats]');
-        if (statsBtn) {
-          const id = Number(statsBtn.dataset.stats);
-          statsOpen.has(id) ? statsOpen.delete(id) : statsOpen.add(id);
           render();
           return;
         }
@@ -519,7 +508,6 @@ const today = new Date().toLocaleDateString('en-US', {
       async function doDelete(id) {
         habits = habits.filter((h) => h.id !== id);
         expanded.delete(id);
-        statsOpen.delete(id);
         render();
         await fetch('/api/habits/' + id, { method: 'DELETE', headers: authHeaders() });
       }
