@@ -14,7 +14,6 @@ export async function POST({ request, locals, cookies }) {
   const auth = request.headers.get('authorization') || '';
   const token = auth.replace(/^Bearer\s+/i, '').trim();
   const profileId = token ? await verifyToken(token, locals.runtime?.env) : null;
-  console.log(`[HAB] /api/session hasBearer=${token ? 'y' : 'n'} valid=${profileId ? 'y' : 'n'}`);
   if (!profileId) return json({ error: 'invalid token' }, 401);
   cookies.set(TOKEN_COOKIE, token, sessionCookieOpts);
   return json({ ok: true });
