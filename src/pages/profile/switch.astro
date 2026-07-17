@@ -1,0 +1,32 @@
+---
+import ProfileLayout from '../../layouts/ProfileLayout.astro';
+import Switch from '../../components/profile/Switch.jsx';
+import { getSql, listProfiles, getProfile, listSharedWithViewer } from '../../lib/db.js';
+import { verifyToken, TOKEN_COOKIE } from '../../lib/auth.js';
+
+const env = Astro.locals.runtime?.env;
+const sql = getSql(env);
+const pid = await verifyToken(Astro.cookies.get(TOKEN_COOKIE)?.value, env);
+const profiles = await listProfiles(sql);
+
+let me = null;
+let shares = { sharedWithMe: [], invites: [] };
+if (pid) {
+  const p = await getProfile(sql, pid);
+  if (p) me = { id: p.id, name: p.name, admin: !!p.is_admin };
+  const incoming = await listSharedWithViewer(sql, pid);
+  const strip = ({ id, name, last_active_at }) => ({ id, name, last_active_at });
+  shares = {
+    sharedWithMe: incoming.filter((o) => o.accepted).map(strip),
+    invites: incoming.filter((o) => !o.accepted).map(strip),
+  };
+}
+---
+
+<ProfileLayout
+  pageTitle="Switch profile — Habitrack"
+  heading={pid ? 'Profile' : 'Switch profile'}
+  tab={pid ? 'switch' : undefined}
+  backHref={pid ? '/' : undefined}>
+  <Switch client:load profiles={profiles} me={me} shares={shares} />
+</ProfileLayout>

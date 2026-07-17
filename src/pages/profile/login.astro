@@ -1,0 +1,15 @@
+---
+import ProfileLayout from '../../layouts/ProfileLayout.astro';
+import Login from '../../components/profile/Login.jsx';
+import { getSql, listProfiles } from '../../lib/db.js';
+
+const sql = getSql(Astro.locals.runtime?.env);
+const profiles = await listProfiles(sql);
+if (!profiles.length) return Astro.redirect('/profile/create');
+const id = Number(Astro.url.searchParams.get('id'));
+const profile = profiles.find((p) => p.id === id) || profiles[0];
+---
+
+<ProfileLayout pageTitle="Sign in — Habitrack" heading={profile.name} backHref="/profile/switch" backLabel="Profiles">
+  <Login client:load profile={{ id: profile.id, name: profile.name }} />
+</ProfileLayout>

@@ -1,0 +1,152 @@
+---
+// Shared top header used by the main app AND the /profile pages, so both feel
+// like one app. Left: 🦫 logo (links home) + date + account chip (online + name
+// + dropdown menu). Right: page-specific actions (slot) + theme toggle.
+//   showAdd     — render the "＋ new habit" button (main app only; wired by index)
+//   showOverview— render the Overview quick-link (main app only)
+//   showHabits  — render the "← Habits" back-to-app link (profile hub only)
+const { showAdd = false, showOverview = false, showHabits = false } = Astro.props;
+const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+---
+
+<header class="mb-8 flex items-center justify-between">
+  <div>
+    <h1 class="flex items-center gap-2 text-2xl font-bold tracking-tight">
+      <a href="/" class="flex items-center gap-2 transition hover:opacity-80">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[7px]">
+          <svg viewBox="0 0 512 512" class="h-full w-full" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="logo-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#10b981"/><stop offset="1" stop-color="#059669"/></linearGradient></defs>
+            <rect width="512" height="512" fill="url(#logo-g)"/>
+            <circle cx="256" cy="256" r="150" fill="none" stroke="#ffffff" stroke-opacity="0.30" stroke-width="26"/>
+            <circle cx="256" cy="256" r="150" fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-dasharray="707 235" transform="rotate(-90 256 256)"/>
+            <path d="M196 260 L240 304 L322 212" fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        Habitrack
+      </a>
+      {showAdd && (
+        <button id="add-btn" aria-label="New habit" title="New habit"
+          class="ml-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm transition hover:bg-emerald-600 active:scale-90">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2.4" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+        </button>
+      )}
+    </h1>
+    <div class="mt-1 flex items-center gap-2">
+      <p class="text-sm text-slate-500 dark:text-slate-400">{today}</p>
+      <div class="relative">
+        <button id="profile-chip" title="Profile menu"
+          class="hidden items-center gap-1.5 rounded-full bg-slate-100 py-0.5 pl-2 pr-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+          <span id="chip-online" title="People online now" class="hidden items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span><span id="online-count" class="tabular-nums">0</span>
+          </span>
+          <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0" /></svg>
+          <span id="profile-chip-name"></span>
+          <svg class="h-3 w-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+        </button>
+        <div id="profile-menu" class="absolute left-0 top-full z-30 mt-1.5 hidden w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <button data-menu="overview" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800">
+            <svg class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
+            Overview
+          </button>
+          <button data-menu="manage" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800">
+            <svg class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+            Manage profile
+          </button>
+          <button data-menu="switch" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800">
+            <svg class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" /></svg>
+            Switch profile
+          </button>
+          <button data-menu="logout" class="flex w-full items-center gap-2 border-t border-slate-100 px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800">
+            <svg class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" /></svg>
+            Log out
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    {showHabits && (
+      <a href="/" aria-label="Back to habits" title="Back to habits"
+        class="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
+        Back
+      </a>
+    )}
+    {showOverview && (
+      <a href="/profile" aria-label="Overview" title="Overview"
+        class="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
+      </a>
+    )}
+    <button id="theme-toggle" aria-label="Toggle theme"
+      class="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
+      <svg class="hidden h-5 w-5 dark:block" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>
+      <svg class="block h-5 w-5 dark:hidden" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>
+    </button>
+  </div>
+</header>
+
+<script>
+  // Header behavior shared by every page: theme toggle, account chip + menu,
+  // presence heartbeat, and the admin online count. Cookie-authed (no token needed).
+  const PID = 'habitrack_profile', TK = 'habitrack_token', VIEW = 'habitrack_viewing';
+  const read = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } };
+  const profile = read(PID);
+  const viewing = read(VIEW);
+
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    const dark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('theme', dark ? 'dark' : 'light');
+  });
+
+  const chip = document.getElementById('profile-chip');
+  const menu = document.getElementById('profile-menu');
+  // Show the account chip when signed in and not in read-only view mode.
+  if (chip && profile && !viewing) {
+    document.getElementById('profile-chip-name').textContent = profile.name;
+    chip.classList.remove('hidden');
+    chip.classList.add('flex');
+  }
+  if (menu) {
+    const toggle = (show) => { const s = show ?? menu.classList.contains('hidden'); menu.classList.toggle('hidden', !s); };
+    chip?.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+    document.addEventListener('click', () => toggle(false));
+    menu.addEventListener('click', async (e) => {
+      const item = e.target.closest('[data-menu]');
+      if (!item) return;
+      const a = item.dataset.menu;
+      if (a === 'overview') location.href = '/profile';
+      else if (a === 'manage') location.href = '/profile/manage';
+      else if (a === 'switch') location.href = '/profile/switch';
+      else if (a === 'logout') {
+        try { await fetch('/api/logout', { method: 'POST' }); } catch { /* ignore */ }
+        localStorage.removeItem(TK); localStorage.removeItem(PID); localStorage.removeItem(VIEW);
+        location.href = '/profile';
+      }
+    });
+  }
+
+  // Presence: heartbeat while the tab is visible (keeps us "online"), plus the
+  // admin-only online count in the chip.
+  if (profile) {
+    const beat = () => (document.visibilityState === 'visible' ? fetch('/api/heartbeat', { method: 'POST' }).catch(() => {}) : null);
+    beat();
+    setInterval(beat, 45000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') beat(); });
+
+    if (profile.admin) {
+      const chipOnline = document.getElementById('chip-online');
+      const refresh = async () => {
+        try {
+          const r = await fetch('/api/presence', { cache: 'no-store' });
+          if (!r.ok) return;
+          const d = await r.json();
+          document.getElementById('online-count').textContent = d.online;
+          chipOnline.classList.remove('hidden');
+          chipOnline.classList.add('inline-flex');
+        } catch { /* ignore */ }
+      };
+      (async () => { await beat(); await refresh(); setInterval(refresh, 60000); })();
+    }
+  }
+</script>

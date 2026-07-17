@@ -1,5 +1,5 @@
 import { getSql, listProfiles, createProfile } from '../../lib/db.js';
-import { hashPasscode, signToken } from '../../lib/auth.js';
+import { hashPasscode, signToken, TOKEN_COOKIE, sessionCookieOpts } from '../../lib/auth.js';
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -15,15 +15,16 @@ export async function GET({ locals }) {
 
 // Open creation (guarded only by the unguessable URL). Creates a profile with a
 // hashed passcode and auto-logs-in by returning a token.
-export async function POST({ request, locals }) {
+export async function POST({ request, locals, cookies }) {
   const env = locals.runtime?.env;
   const body = await request.json().catch(() => ({}));
   const name = (body.name || '').trim();
   const passcode = String(body.passcode || '');
   if (!name) return json({ error: 'Name is required' }, 400);
-  if (passcode.length < 4) return json({ error: 'Passcode must be at least 4 characters' }, 400);
+  if (passcode.length < 6) return json({ error: 'Passcode must be at least 6 characters' }, 400);
 
   const profile = await createProfile(getSql(env), name, await hashPasscode(passcode));
   const token = await signToken(profile.id, env);
+  cookies.set(TOKEN_COOKIE, token, sessionCookieOpts);
   return json({ token, id: profile.id, name: profile.name, admin: !!profile.is_admin }, 201);
 }

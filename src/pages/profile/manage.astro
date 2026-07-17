@@ -1,0 +1,27 @@
+---
+import ProfileLayout from '../../layouts/ProfileLayout.astro';
+import Manage from '../../components/profile/Manage.jsx';
+import { getSql, listProfiles, getProfile, listShareViewers, listPresence } from '../../lib/db.js';
+import { verifyToken, TOKEN_COOKIE } from '../../lib/auth.js';
+
+const env = Astro.locals.runtime?.env;
+const sql = getSql(env);
+const pid = await verifyToken(Astro.cookies.get(TOKEN_COOKIE)?.value, env);
+if (!pid) return Astro.redirect('/profile');
+
+const p = await getProfile(sql, pid);
+if (!p) return Astro.redirect('/profile');
+const me = { id: p.id, name: p.name, admin: !!p.is_admin };
+const profiles = await listProfiles(sql);
+const shared = await listShareViewers(sql, pid);
+
+let presence = null;
+if (me.admin) {
+  const rows = await listPresence(sql, 120);
+  presence = { online: rows.filter((r) => r.online).length, profiles: rows };
+}
+---
+
+<ProfileLayout pageTitle="Manage profile — Habitrack" heading="Profile" tab="manage" backHref="/">
+  <Manage client:load me={me} profiles={profiles} shares={{ shared }} presence={presence} />
+</ProfileLayout>

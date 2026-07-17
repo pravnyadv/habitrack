@@ -102,16 +102,19 @@ export function heatmapBlock({ earliest, dayInfo, legend, countText }) {
   let cells = '';
   for (let i = 0; i < total; i++) {
     const ds = addDays(gridStart, i);
-    if (ds < earliest || ds > TODAY) { cells += '<span class="rounded-[1px] opacity-0"></span>'; continue; }
+    if (ds < earliest || ds > TODAY) { cells += '<span class="aspect-square rounded-[2px] opacity-0"></span>'; continue; }
     const info = dayInfo(ds) || {};
-    cells += `<span class="rounded-[1px] ${info.cls || ''}" style="${info.style || ''}" title="${info.title || ''}"></span>`;
+    cells += `<span class="aspect-square rounded-[2px] ${info.cls || ''}" style="${info.style || ''}" title="${info.title || ''}"></span>`;
   }
 
+  // GitHub-style: 2px radius, ~3px gaps, month labels above. Cells are
+  // aspect-square in 1fr columns, so the whole grid fits the container width
+  // exactly (no scroll) with every box a true square.
   return `
-    ${countText ? `<p class="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">${countText}</p>` : ''}
-    <div style="max-width:${Math.round(weeks * 16)}px">
-      <div class="grid gap-[2px] text-[9px] leading-none text-slate-400 dark:text-slate-500" style="grid-template-columns:repeat(${weeks},minmax(0,1fr))">${months}</div>
-      <div class="mt-1 grid gap-[2px]" style="grid-auto-flow:column;grid-template-rows:repeat(7,minmax(0,1fr));grid-template-columns:repeat(${weeks},minmax(0,1fr));aspect-ratio:${weeks}/7">${cells}</div>
+    ${countText ? `<p class="mb-3 text-xs font-medium text-slate-500 dark:text-slate-400">${countText}</p>` : ''}
+    <div>
+      <div class="grid gap-x-[2px] text-[11px] leading-none text-slate-500 dark:text-slate-400 sm:gap-x-[3px]" style="grid-template-columns:repeat(${weeks},minmax(0,1fr))">${months}</div>
+      <div class="mt-1.5 grid gap-[2px] sm:gap-[3px]" style="grid-auto-flow:column;grid-template-columns:repeat(${weeks},minmax(0,1fr));grid-template-rows:repeat(7,auto)">${cells}</div>
       ${legend || ''}
     </div>`;
 }
@@ -193,6 +196,46 @@ export function toCSV(records) {
 
 export function toJSON(records) {
   return JSON.stringify(records, null, 2);
+}
+
+// ---- relative time --------------------------------------------------------
+// Compact "last active" label from a timestamp (or null). "online" is decided
+// by the server; this is just the fuzzy age for everything else.
+export function timeAgo(ts) {
+  if (!ts) return 'never';
+  const then = new Date(ts).getTime();
+  if (Number.isNaN(then)) return 'never';
+  const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  const w = Math.floor(d / 7);
+  if (w < 5) return `${w}w ago`;
+  return `${Math.floor(d / 30)}mo ago`;
+}
+
+// ---- API client -----------------------------------------------------------
+// One place for the request boilerplate: bearer token, socket id, JSON encode,
+// no-store, and JSON decode. Returns { ok, status, data } so callers can branch
+// on status (401/403/…) without touching Response plumbing. `body` (when set)
+// is JSON-stringified and gets the Content-Type header automatically.
+export async function apiFetch(path, { method = 'GET', body, token, socketId } = {}) {
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (socketId) headers['x-socket-id'] = socketId;
+  const opts = { method, headers, cache: 'no-store' };
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, opts);
+  let data = null;
+  try { data = await res.json(); } catch { /* empty / non-JSON body */ }
+  return { ok: res.ok, status: res.status, data };
 }
 
 // ---- realtime (Pusher) ---------------------------------------------------

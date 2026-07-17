@@ -49,7 +49,7 @@ export async function PATCH({ params, request, locals }) {
   if (body.newPasscode != null) {
     if (!isSelf) return json({ error: 'Only the profile owner can change its passcode' }, 403);
     const newPasscode = String(body.newPasscode);
-    if (newPasscode.length < 4) return json({ error: 'Passcode must be at least 4 characters' }, 400);
+    if (newPasscode.length < 6) return json({ error: 'Passcode must be at least 6 characters' }, 400);
     const targetProfile = await getProfile(sql, target);
     if (!(await verifyPasscode(String(body.currentPasscode || ''), targetProfile.passcode_hash))) {
       return json({ error: 'Current passcode is wrong' }, 401);

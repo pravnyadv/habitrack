@@ -1,0 +1,11 @@
+---
+import ProfileLayout from '../../layouts/ProfileLayout.astro';
+import Create from '../../components/profile/Create.jsx';
+import { getSql, listProfiles } from '../../lib/db.js';
+
+const profiles = await listProfiles(getSql(Astro.locals.runtime?.env));
+---
+
+<ProfileLayout pageTitle="New profile — Habitrack" heading="New profile" backHref={profiles.length ? '/profile/switch' : undefined} backLabel="Profiles">
+  <Create client:load profiles={profiles} />
+</ProfileLayout>

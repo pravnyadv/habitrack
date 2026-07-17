@@ -1,4 +1,4 @@
-import { getSql, listHabits, createHabit } from '../../lib/db.js';
+import { getSql, listHabits, createHabit, canView } from '../../lib/db.js';
 import { authedProfile, unauthorized } from '../../lib/auth.js';
 import { broadcast } from '../../lib/realtime.js';
 
@@ -8,11 +8,22 @@ const json = (data, status = 200) =>
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   });
 
+// GET own habits, or another profile's when ?profile=<id> is set and that
+// profile has shared view access with the caller. Read-only either way (this
+// endpoint never writes); mutations only ever use the caller's own id.
 export async function GET({ request, locals }) {
   const env = locals.runtime?.env;
-  const profileId = await authedProfile(request, env);
-  if (!profileId) return unauthorized();
-  const habits = await listHabits(getSql(env), profileId);
+  const me = await authedProfile(request, env);
+  if (!me) return unauthorized();
+  const sql = getSql(env);
+  const raw = new URL(request.url).searchParams.get('profile');
+  const target = raw != null ? Number(raw) : null;
+  let scope = me;
+  if (target != null && Number.isInteger(target) && target !== me) {
+    if (!(await canView(sql, me, target))) return json({ error: 'Forbidden' }, 403);
+    scope = target;
+  }
+  const habits = await listHabits(sql, scope);
   return json(habits);
 }
 

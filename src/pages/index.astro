@@ -1,10 +1,21 @@
 ---
 import '../styles/global.css';
-// No server-side data fetch: the app is passcode-gated and loads habits
-// client-side (with the passcode header) so the HTML never contains data.
-const today = new Date().toLocaleDateString('en-US', {
-  weekday: 'long', month: 'long', day: 'numeric',
-});
+import AppHeader from '../components/AppHeader.astro';
+import { getSql, listHabits } from '../lib/db.js';
+import { verifyToken, TOKEN_COOKIE } from '../lib/auth.js';
+
+// Middleware already guaranteed a valid session cookie for this route, so we can
+// fetch the signed-in profile's habits server-side and ship them in the HTML —
+// the app renders instantly with no empty→filled flash. (View-mode is a client
+// concept, so that rarer path still fetches; see boot().)
+const env = Astro.locals.runtime?.env;
+const token = Astro.cookies.get(TOKEN_COOKIE)?.value;
+let initialHabits = [];
+try {
+  const pid = token ? await verifyToken(token, env) : null;
+  if (pid) initialHabits = await listHabits(getSql(env), pid);
+} catch { initialHabits = []; }
+const initialJson = JSON.stringify(initialHabits).replace(/</g, '\\u003c');
 ---
 
 <html lang="en" class="h-full">
@@ -26,6 +37,8 @@ const today = new Date().toLocaleDateString('en-US', {
     <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#020617" media="(prefers-color-scheme: dark)" />
     <script is:inline>
+      // Auth is gated server-side by middleware (redirects to /profile before any
+      // HTML is sent), so no client-side guard is needed here.
       // Apply theme before paint to avoid flash
       const t = localStorage.getItem('theme');
       if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -35,126 +48,47 @@ const today = new Date().toLocaleDateString('en-US', {
   </head>
   <body class="h-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans antialiased">
 
-    <!-- Profile gate: covers everything until a profile is unlocked -->
-    <div id="gate" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-50 px-6 dark:bg-slate-950">
-      <div class="w-full max-w-xs text-center">
-        <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500 text-3xl shadow-sm">🦫</div>
-        <h1 class="text-lg font-bold">Habitrack</h1>
-
-        <!-- Login view: selected profile + passcode -->
-        <form id="login-form" class="mt-5 hidden">
-          <p class="mb-3 text-sm text-slate-500 dark:text-slate-400">
-            <span id="login-profile-name" class="font-semibold text-slate-700 dark:text-slate-200"></span>
-            <button type="button" id="switch-profile" class="ml-1 text-emerald-600 hover:underline dark:text-emerald-400">Change</button>
-          </p>
-          <input id="login-passcode" type="password" inputmode="text" autocomplete="current-password"
-            placeholder="Passcode" aria-label="Passcode"
-            class="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-center text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
-          <p id="login-error" class="mt-2 hidden text-xs font-medium text-rose-500">Wrong passcode — try again.</p>
-          <button type="submit"
-            class="mt-4 h-11 w-full rounded-xl bg-emerald-500 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 active:scale-95">Unlock</button>
-        </form>
-
-        <!-- Picker view: choose a profile -->
-        <div id="picker-view" class="mt-5 hidden">
-          <p class="mb-3 text-sm text-slate-500 dark:text-slate-400">Choose a profile</p>
-          <div id="profile-list" class="flex flex-col gap-2"></div>
-          <button type="button" id="new-profile-btn"
-            class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 py-2.5 text-sm font-medium text-slate-500 transition hover:border-slate-400 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400">
-            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-            New profile
-          </button>
-          <button type="button" id="manage-btn" class="mt-3 hidden text-xs font-medium text-slate-500 hover:underline dark:text-slate-400">Manage my profile</button>
-          <button type="button" id="picker-cancel" class="mt-3 hidden text-xs text-slate-400 hover:underline">Cancel</button>
-        </div>
-
-        <!-- Manage view (rename / change passcode / delete the signed-in profile) -->
-        <div id="manage-view" class="mt-5 hidden text-left">
-          <p class="mb-3 text-center text-sm text-slate-500 dark:text-slate-400">Manage <span id="manage-name" class="font-semibold text-slate-700 dark:text-slate-200"></span></p>
-          <label class="mb-1 block text-[11px] font-medium text-slate-400">Profile name</label>
-          <div class="mb-4 flex gap-2">
-            <input id="manage-rename" autocomplete="off" aria-label="Profile name"
-              class="h-10 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
-            <button type="button" id="manage-rename-save" class="h-10 shrink-0 rounded-xl bg-slate-100 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Save</button>
-          </div>
-          <label class="mb-1 block text-[11px] font-medium text-slate-400">Change passcode</label>
-          <input id="manage-cur-pass" type="password" autocomplete="current-password" placeholder="Current passcode" aria-label="Current passcode"
-            class="mb-2 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
-          <div class="flex gap-2">
-            <input id="manage-new-pass" type="password" autocomplete="new-password" placeholder="New passcode (4+)" aria-label="New passcode"
-              class="h-10 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
-            <button type="button" id="manage-pass-save" class="h-10 shrink-0 rounded-xl bg-slate-100 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Change</button>
-          </div>
-          <p id="manage-msg" class="mt-2 hidden text-xs font-medium"></p>
-          <button type="button" id="manage-delete" class="mt-5 w-full rounded-xl py-2.5 text-sm font-medium text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-950/40">Delete this profile</button>
-          <button type="button" id="manage-back" class="mt-2 block w-full text-center text-xs text-slate-400 hover:underline">Back</button>
-        </div>
-
-        <!-- Create view -->
-        <form id="create-form" class="mt-5 hidden">
-          <p class="mb-3 text-sm text-slate-500 dark:text-slate-400">Create a profile</p>
-          <input id="create-name" placeholder="Profile name" autocomplete="off" aria-label="Profile name"
-            class="mb-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-center text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
-          <input id="create-passcode" type="password" inputmode="text" autocomplete="new-password" placeholder="Choose a passcode (4+ chars)" aria-label="Passcode"
-            class="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-center text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
-          <p id="create-error" class="mt-2 hidden text-xs font-medium text-rose-500"></p>
-          <button type="submit"
-            class="mt-4 h-11 w-full rounded-xl bg-emerald-500 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 active:scale-95">Create & enter</button>
-          <button type="button" id="create-back" class="mt-2 text-xs text-slate-400 hover:underline">Back</button>
-        </form>
-      </div>
-    </div>
-
     <!-- Delete confirmation -->
     <div id="confirm-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 px-6 backdrop-blur-sm">
       <div class="w-full max-w-xs rounded-2xl bg-white p-5 shadow-xl dark:bg-slate-900">
-        <p class="text-base font-semibold">Delete habit?</p>
+        <p id="confirm-title" class="text-base font-semibold">Are you sure?</p>
         <p id="confirm-text" class="mt-1.5 text-sm text-slate-500 dark:text-slate-400"></p>
         <div class="mt-5 flex gap-2">
           <button id="confirm-cancel" class="h-10 flex-1 rounded-xl bg-slate-100 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 active:scale-95 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cancel</button>
-          <button id="confirm-delete" class="h-10 flex-1 rounded-xl bg-rose-500 text-sm font-semibold text-white transition hover:bg-rose-600 active:scale-95">Delete</button>
+          <button id="confirm-ok" class="h-10 flex-1 rounded-xl bg-rose-500 text-sm font-semibold text-white transition hover:bg-rose-600 active:scale-95">Delete</button>
         </div>
       </div>
     </div>
 
-    <div class="mx-auto max-w-2xl px-4 pb-24 pt-8 sm:pt-12">
+    <!-- iOS-only install hint (Safari has no auto-install / address-bar icon).
+         Fixed bottom banner, dismissible, shown once — never on desktop/Chrome. -->
+    <div id="ios-install" class="fixed inset-x-0 bottom-0 z-40 hidden translate-y-4 px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] opacity-0 transition-all duration-300">
+      <div class="mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 8.25H7.5a2.25 2.25 0 0 0-2.25 2.25v9a2.25 2.25 0 0 0 2.25 2.25h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25H15m0-3-3-3m0 0-3 3m3-3V15" /></svg>
+        </span>
+        <p class="min-w-0 flex-1 text-xs leading-snug text-slate-600 dark:text-slate-300">
+          Install Habitrack — tap <span class="font-semibold text-slate-900 dark:text-white">Share</span>, then <span class="font-semibold text-slate-900 dark:text-white">Add to Home Screen</span>.
+        </p>
+        <button id="ios-install-close" aria-label="Dismiss" class="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-200">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+    </div>
 
-      <!-- Header -->
-      <header class="mb-8 flex items-center justify-between">
-        <div>
-          <h1 class="flex items-center gap-2 text-2xl font-bold tracking-tight">
-            <span class="text-3xl">🦫</span> Habitrack
-            <button id="add-btn" aria-label="New habit" title="New habit"
-              class="ml-1 flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm transition hover:bg-emerald-600 active:scale-90">
-              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2.4" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-            </button>
-          </h1>
-          <div class="mt-1 flex items-center gap-2">
-            <p class="text-sm text-slate-500 dark:text-slate-400">{today}</p>
-            <button id="profile-chip" title="Switch profile"
-              class="hidden items-center gap-1 rounded-full bg-slate-100 py-0.5 pl-2 pr-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
-              <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0" /></svg>
-              <span id="profile-chip-name"></span>
-              <svg class="h-3 w-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
-            </button>
-          </div>
-        </div>
-        <div class="flex items-center gap-2">
-          <button id="install-btn" aria-label="Install app" title="Install app"
-            class="hidden items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-emerald-600 shadow-sm transition hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400">
-            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-          </button>
-          <a href="/overview" aria-label="Overview" title="Overview"
-            class="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
-            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
-          </a>
-          <button id="theme-toggle" aria-label="Toggle theme"
-            class="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
-            <svg class="hidden h-5 w-5 dark:block" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>
-            <svg class="block h-5 w-5 dark:hidden" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>
-          </button>
-        </div>
-      </header>
+    <div class="mx-auto max-w-3xl px-4 pb-24 pt-8 sm:pt-12">
+
+      <!-- Header (shared with /profile via the AppHeader component) -->
+      <AppHeader showAdd showOverview />
+
+      <!-- Read-only banner (shown when viewing a profile shared with you) -->
+      <div id="view-banner" class="mb-6 hidden items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+        <span class="flex min-w-0 items-center gap-2">
+          <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+          <span class="truncate">Viewing <span id="view-banner-name" class="font-semibold"></span> · read-only</span>
+        </span>
+        <button id="view-exit" class="shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-900/50">Exit</button>
+      </div>
 
       <div id="load-error" class="mb-6 hidden rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300">
         Couldn't reach the server. Check your connection and reload.
@@ -180,11 +114,16 @@ const today = new Date().toLocaleDateString('en-US', {
       <!-- Add habit (toggled by the + in the header) -->
       <form id="habit-form" class="mb-6 hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div class="flex items-center gap-2">
-          <input id="habit-emoji" name="emoji" maxlength="2" value="✅" aria-label="Emoji"
-            class="h-11 w-12 shrink-0 rounded-xl border border-slate-200 bg-slate-50 text-center text-xl outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-800" />
+          <div class="relative shrink-0">
+            <input id="habit-emoji" name="emoji" maxlength="2" value="✅" aria-label="Emoji" title="Pick an emoji" readonly
+              class="h-11 w-12 cursor-pointer rounded-xl border border-slate-200 bg-slate-50 text-center text-xl outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-800" />
+            <div id="emoji-pop" class="absolute left-0 top-full z-20 mt-1.5 hidden w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+              <div id="emoji-grid" class="grid grid-cols-6 gap-1"></div>
+            </div>
+          </div>
           <input id="habit-name" name="name" placeholder="e.g. Morning run" autocomplete="off" required
             class="h-11 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-800" />
-          <button type="submit"
+          <button type="submit" id="habit-submit"
             class="h-11 shrink-0 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 active:scale-95">Add</button>
         </div>
         <div id="color-picker" class="mt-3 flex flex-wrap gap-2"></div>
@@ -193,6 +132,7 @@ const today = new Date().toLocaleDateString('en-US', {
           <div id="freq-seg" class="flex gap-1.5"></div>
           <div id="freq-days" class="mt-2 hidden flex-wrap gap-1.5"></div>
         </div>
+        <button type="button" id="habit-cancel" class="mt-3 hidden text-xs text-slate-400 hover:underline">Cancel edit</button>
       </form>
 
       <!-- Weekday header -->
@@ -201,16 +141,30 @@ const today = new Date().toLocaleDateString('en-US', {
       <!-- Habit list -->
       <main id="habit-list" class="space-y-2"></main>
 
-      <p id="empty-state" class="hidden py-16 text-center text-sm text-slate-400 dark:text-slate-500">
-        No habits yet — add your first one above ✨
-      </p>
+      <div id="empty-state" class="hidden py-10 text-center">
+        <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-3xl dark:bg-emerald-950/40">🌱</div>
+        <p id="empty-title" class="text-base font-semibold">Start your first habit</p>
+        <p id="empty-sub" class="mx-auto mt-1 max-w-xs text-sm text-slate-400 dark:text-slate-500">Track something you want to do regularly — check it off with one tap a day.</p>
+        <button id="empty-add-btn"
+          class="mx-auto mt-5 flex w-full max-w-xs items-center justify-center gap-1.5 rounded-xl border border-dashed border-emerald-300 py-3 text-sm font-semibold text-emerald-600 transition hover:border-emerald-400 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/40">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+          Add a habit
+        </button>
+      </div>
     </div>
 
+    <script id="initial-habits" type="application/json" is:inline set:html={initialJson}></script>
+
     <script>
-      import { COLORS, COLORS_DARK, MONTHS, WD, TODAY, iso, pad2, addDays, dow, schedOf, stats, windowStart, heatmapBlock, githubGraph, escapeHtml, connectRealtime } from '../lib/compute.js';
+      import { COLORS, COLORS_DARK, MONTHS, WD, TODAY, iso, pad2, addDays, dow, schedOf, stats, windowStart, heatmapBlock, githubGraph, escapeHtml, connectRealtime, apiFetch } from '../lib/compute.js';
+
+      // Server-rendered initial habits (own profile) — render instantly, no flash.
+      let initialHabits = [];
+      try { initialHabits = JSON.parse(document.getElementById('initial-habits')?.textContent || '[]'); } catch {}
 
       // ---- constants ---------------------------------------------------------
-      const EMOJIS = ['✅','💧','📖','🏃','🧘','💪','🥗','😴','✍️','🎯','☀️','🎸','💊','🚭','📵'];
+      const EMOJIS = ['✅','💧','📖','🏃','🧘','💪','🥗','😴','✍️','🎯','☀️','🎸','💊','🚭','📵',
+        '🏋️','🚶','🚴','🏊','🧠','🛌','☕','🍎','🥦','📝','💻','🎨','🎹','🌙','🙏','⏰','📚','🐕','🌿','🎧'];
 
       let habits = [];
       const expanded = new Set();
@@ -218,15 +172,18 @@ const today = new Date().toLocaleDateString('en-US', {
       // ---- auth: signed token + selected profile (both in localStorage) ------
       const TK = 'habitrack_token';
       const PID = 'habitrack_profile';
+      const VIEW = 'habitrack_viewing';
       let token = localStorage.getItem(TK) || '';
       let profile = null; // { id, name }
       try { profile = JSON.parse(localStorage.getItem(PID) || 'null'); } catch {}
+      // When set ({id,name}), the app shows this shared profile read-only instead
+      // of our own. Persisted so it survives the reload used to rebind realtime.
+      let viewing = null;
+      try { viewing = JSON.parse(localStorage.getItem(VIEW) || 'null'); } catch {}
+      const dataId = () => (viewing ? viewing.id : (profile && profile.id));
       let socketId = null; // our realtime socket, sent so the server excludes us
-      const authHeaders = (extra) => ({
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(socketId ? { 'x-socket-id': socketId } : {}),
-        ...extra,
-      });
+      // Bound API client: reads the live token + socketId on every call.
+      const api = (path, opts = {}) => apiFetch(path, { token, socketId, ...opts });
 
       // ---- rendering ---------------------------------------------------------
       const list = document.getElementById('habit-list');
@@ -266,6 +223,13 @@ const today = new Date().toLocaleDateString('en-US', {
             return `<div class="flex h-9 items-center justify-center opacity-70" title="${d} · rest day">${REST}</div>`;
           }
           const done = set.has(d);
+          if (viewing) {
+            // read-only: same visual, no button affordances or click target
+            return `<div class="flex h-9 items-center justify-center ${isToday ? 'rounded-lg bg-slate-50/70 dark:bg-slate-800/40' : ''}"
+                title="${d}${done ? ' · done' : ''}" style="${done ? `color:${color}` : ''}">
+                <span class="${done ? '' : 'text-slate-300 dark:text-slate-600'}">${done ? CHECK : CROSS}</span>
+              </div>`;
+          }
           return `<button data-day="${d}" data-habit="${habit.id}"
               class="day flex h-9 items-center justify-center rounded-lg transition hover:bg-slate-50 active:scale-90 dark:hover:bg-slate-800/60 ${isToday ? 'bg-slate-50/70 dark:bg-slate-800/40' : ''}"
               title="${d}${done ? ' · done' : ''}"
@@ -320,6 +284,13 @@ const today = new Date().toLocaleDateString('en-US', {
         // added per-state below, not baked into NUM.
         const NUM = `${CTR} z-10 text-sm tabular-nums`;
 
+        // When viewing a shared profile, cells are inert <div>s (no click target).
+        const ro = !!viewing;
+        const cellOpen = (ds, title) => ro
+          ? `<div class="relative aspect-square" title="${title}">`
+          : `<button data-day="${ds}" data-habit="${habit.id}" class="day relative aspect-square transition active:opacity-70" title="${title}">`;
+        const cellClose = ro ? '</div>' : '</button>';
+
         let cells = '';
         for (let i = 0; i < firstDow; i++) cells += '<div></div>';
         for (let d = 1; d <= daysInMonth; d++) {
@@ -337,15 +308,15 @@ const today = new Date().toLocaleDateString('en-US', {
             const full = leftSq || rightSq;
             const br = `${leftSq ? 0 : R}px ${rightSq ? 0 : R}px ${rightSq ? 0 : R}px ${leftSq ? 0 : R}px`;
             const fill = `<span class="${CTR}" style="width:${full ? '100%' : '80%'};height:${HGT};background:${color};border-radius:${br}"></span>`;
-            cells += `<button data-day="${ds}" data-habit="${habit.id}" class="day relative aspect-square transition active:opacity-70" title="${ds} · done">${fill}<span class="${NUM} font-medium text-white">${d}</span></button>`;
+            cells += `${cellOpen(ds, ds + ' · done')}${fill}<span class="${NUM} font-medium text-white">${d}</span>${cellClose}`;
           } else if (isToday && scheduled) {
             // today, not done — transparent tile with an inset ring in habit color
             const fill = `<span class="${CTR}" style="width:80%;height:${HGT};border-radius:${R}px;box-shadow:inset 0 0 0 1.5px ${color}"></span>`;
-            cells += `<button data-day="${ds}" data-habit="${habit.id}" class="day relative aspect-square transition active:opacity-70" title="${ds}">${fill}<span class="${NUM} font-normal" style="color:${colorDark}">${d}</span></button>`;
+            cells += `${cellOpen(ds, ds)}${fill}<span class="${NUM} font-normal" style="color:${colorDark}">${d}</span>${cellClose}`;
           } else if (scheduled && !future && !beforeActive) {
             // missed (past, active, scheduled, not done) — light tint, discrete tile
             const fill = `<span class="${CTR}" style="width:80%;height:${HGT};background:${tint};border-radius:10px"></span>`;
-            cells += `<button data-day="${ds}" data-habit="${habit.id}" class="day relative aspect-square transition active:opacity-70" title="${ds} · missed">${fill}<span class="${NUM} font-normal" style="color:${colorDark}">${d}</span></button>`;
+            cells += `${cellOpen(ds, ds + ' · missed')}${fill}<span class="${NUM} font-normal" style="color:${colorDark}">${d}</span>${cellClose}`;
           } else {
             // before-created / future / rest day — no fill, legible-but-subordinate
             // gray. The ONLY state that uses gray (never a global default).
@@ -380,6 +351,17 @@ const today = new Date().toLocaleDateString('en-US', {
           </div>`;
       }
 
+      // up/down mover; disabled at the list ends (idx computed from live order)
+      function reorderBtn(dir, id) {
+        const idx = habits.findIndex((h) => h.id === id);
+        const disabled = dir === 'up' ? idx <= 0 : idx >= habits.length - 1;
+        const path = dir === 'up' ? 'm4.5 15.75 7.5-7.5 7.5 7.5' : 'm19.5 8.25-7.5 7.5-7.5-7.5';
+        return `<button ${disabled ? 'disabled' : `data-move="${dir}" data-habit-move="${id}"`} aria-label="Move ${dir}"
+            class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent dark:text-slate-400 dark:hover:bg-slate-800">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="${path}"/></svg>
+          </button>`;
+      }
+
       // ---- expanded panel: overview (calendar) + optional stats -------------
       function overviewPanel(habit) {
         const s = stats(habit);
@@ -399,15 +381,30 @@ const today = new Date().toLocaleDateString('en-US', {
               ${cell('30-day', s.rate30 + '%')}
             </div>
             <div class="mt-5">${githubGraph(habit)}</div>
-            <div class="mt-5 flex justify-end border-t border-slate-100 pt-4 dark:border-slate-800">
-              <button data-delete="${habit.id}" class="rounded-lg px-3 py-1.5 text-xs font-medium text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-950/40">Delete habit</button>
-            </div>
+            ${viewing ? '' : `<div class="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 dark:border-slate-800">
+              <div class="flex items-center gap-1">
+                ${reorderBtn('up', habit.id)}
+                ${reorderBtn('down', habit.id)}
+              </div>
+              <div class="flex items-center gap-1">
+                <button data-edit="${habit.id}" class="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">Edit</button>
+                <button data-delete="${habit.id}" class="rounded-lg px-3 py-1.5 text-xs font-medium text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-950/40">Delete</button>
+              </div>
+            </div>`}
           </div>`;
       }
 
       function render() {
         const has = habits.length > 0;
         document.getElementById('empty-state').classList.toggle('hidden', has);
+        if (!has) {
+          // Viewers can't add — show a neutral message instead of the add button.
+          document.getElementById('empty-add-btn').classList.toggle('hidden', !!viewing);
+          document.getElementById('empty-title').textContent = viewing ? 'No habits yet' : 'Start your first habit';
+          document.getElementById('empty-sub').textContent = viewing
+            ? `${viewing.name} hasn’t added any habits yet.`
+            : 'Track something you want to do regularly — check it off with one tap a day.';
+        }
         weekHead.classList.toggle('hidden', !has);
         weekHeader();
         list.innerHTML = habits.map((h) => {
@@ -450,6 +447,7 @@ const today = new Date().toLocaleDateString('en-US', {
       list.addEventListener('click', async (e) => {
         const dayBtn = e.target.closest('.day');
         if (dayBtn) {
+          if (viewing) return; // read-only: never write to a shared profile
           const id = Number(dayBtn.dataset.habit);
           const day = dayBtn.dataset.day;
           const habit = habits.find((h) => h.id === id);
@@ -458,10 +456,7 @@ const today = new Date().toLocaleDateString('en-US', {
           habit.days = has ? habit.days.filter((d) => d !== day) : [...habit.days, day];
           render();
           try {
-            await fetch('/api/checkins', {
-              method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
-              body: JSON.stringify({ habitId: id, day }),
-            });
+            await api('/api/checkins', { method: 'POST', body: { habitId: id, day } });
           } catch { /* keep optimistic state */ }
           return;
         }
@@ -499,27 +494,59 @@ const today = new Date().toLocaleDateString('en-US', {
         if (del) {
           const id = Number(del.dataset.delete);
           const habit = habits.find((h) => h.id === id);
-          askConfirm(`This permanently deletes “${habit ? habit.name : 'this habit'}” and all its check-ins. This can't be undone.`, () => doDelete(id));
+          askConfirm('Delete habit?', `This permanently deletes “${habit ? habit.name : 'this habit'}” and all its check-ins. This can't be undone.`, () => doDelete(id));
+          return;
+        }
+        const edit = e.target.closest('[data-edit]');
+        if (edit) {
+          const habit = habits.find((h) => h.id === Number(edit.dataset.edit));
+          if (habit) enterEditMode(habit);
+          return;
+        }
+        const move = e.target.closest('[data-move]');
+        if (move) {
+          moveHabit(Number(move.dataset.habitMove), move.dataset.move);
           return;
         }
       });
+
+      // ---- reorder -----------------------------------------------------------
+      function moveHabit(id, dir) {
+        const i = habits.findIndex((h) => h.id === id);
+        const j = dir === 'up' ? i - 1 : i + 1;
+        if (i < 0 || j < 0 || j >= habits.length) return;
+        [habits[i], habits[j]] = [habits[j], habits[i]];
+        render();
+        api('/api/habits/reorder', { method: 'POST', body: { ids: habits.map((h) => h.id) } });
+      }
 
       async function doDelete(id) {
         habits = habits.filter((h) => h.id !== id);
         expanded.delete(id);
         render();
-        await fetch('/api/habits/' + id, { method: 'DELETE', headers: authHeaders() });
+        await api('/api/habits/' + id, { method: 'DELETE' });
       }
 
       // ---- reusable confirmation modal --------------------------------------
       const confirmModal = document.getElementById('confirm-modal');
+      const confirmOk = document.getElementById('confirm-ok');
       let onConfirmYes = null;
       function showConfirm() { confirmModal.classList.remove('hidden'); confirmModal.classList.add('flex'); }
       function hideConfirm() { confirmModal.classList.add('hidden'); confirmModal.classList.remove('flex'); onConfirmYes = null; }
-      function askConfirm(text, fn) { document.getElementById('confirm-text').textContent = text; onConfirmYes = fn; showConfirm(); }
+      // askConfirm(title, text, fn, { okLabel = 'Delete', danger = true })
+      const OK_DANGER = 'bg-rose-500 hover:bg-rose-600';
+      const OK_NEUTRAL = 'bg-emerald-500 hover:bg-emerald-600';
+      function askConfirm(title, text, fn, opts = {}) {
+        document.getElementById('confirm-title').textContent = title;
+        document.getElementById('confirm-text').textContent = text;
+        confirmOk.textContent = opts.okLabel || 'Delete';
+        confirmOk.className = `h-10 flex-1 rounded-xl text-sm font-semibold text-white transition active:scale-95 ${opts.danger === false ? OK_NEUTRAL : OK_DANGER}`;
+        onConfirmYes = fn;
+        showConfirm();
+      }
       document.getElementById('confirm-cancel').addEventListener('click', hideConfirm);
       confirmModal.addEventListener('click', (e) => { if (e.target === confirmModal) hideConfirm(); });
-      document.getElementById('confirm-delete').addEventListener('click', async () => {
+      confirmOk.addEventListener('click', async () => {
         const fn = onConfirmYes;
         hideConfirm();
         if (fn) await fn();
@@ -532,18 +559,33 @@ const today = new Date().toLocaleDateString('en-US', {
         <button type="button" data-color="${name}" aria-label="${name}"
           class="h-7 w-7 rounded-full border-2 transition ${name === selectedColor ? 'scale-110 border-slate-400 dark:border-white' : 'border-transparent'}"
           style="background:${hex}"></button>`).join('');
-      picker.addEventListener('click', (e) => {
-        const b = e.target.closest('[data-color]');
-        if (!b) return;
-        selectedColor = b.dataset.color;
+      function setColor(name) {
+        selectedColor = name;
         [...picker.children].forEach((c) =>
           c.className = c.className.replace(/scale-110 border-slate-400 dark:border-white|border-transparent/g,
             c.dataset.color === selectedColor ? 'scale-110 border-slate-400 dark:border-white' : 'border-transparent'));
+      }
+      picker.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-color]');
+        if (!b) return;
+        setColor(b.dataset.color);
       });
 
-      // quick emoji suggestions on focus
+      // emoji picker: click the box to open a grid of suggestions
       const emojiInput = document.getElementById('habit-emoji');
-      emojiInput.addEventListener('focus', () => emojiInput.select());
+      const emojiPop = document.getElementById('emoji-pop');
+      const emojiGrid = document.getElementById('emoji-grid');
+      emojiGrid.innerHTML = EMOJIS.map((e) =>
+        `<button type="button" data-emoji="${e}" class="flex h-9 items-center justify-center rounded-lg text-xl transition hover:bg-slate-100 dark:hover:bg-slate-800">${e}</button>`).join('');
+      const showEmojiPop = (show) => emojiPop.classList.toggle('hidden', !(show ?? emojiPop.classList.contains('hidden')));
+      emojiInput.addEventListener('click', (e) => { e.stopPropagation(); showEmojiPop(); });
+      emojiGrid.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-emoji]');
+        if (!b) return;
+        emojiInput.value = b.dataset.emoji;
+        showEmojiPop(false);
+      });
+      document.addEventListener('click', (e) => { if (!emojiPop.contains(e.target) && e.target !== emojiInput) showEmojiPop(false); });
 
       // ---- frequency selector ------------------------------------------------
       let freqMode = 'daily';                      // 'daily' | 'weekdays' | 'custom'
@@ -590,146 +632,141 @@ const today = new Date().toLocaleDateString('en-US', {
       });
       renderFreq();
 
-      document.getElementById('habit-form').addEventListener('submit', async (e) => {
+      // ---- add / edit habit (one form, two modes) ----------------------------
+      let editingId = null;                       // null = create mode
+      const habitForm = document.getElementById('habit-form');
+      const habitNameInput = document.getElementById('habit-name');
+      const habitSubmit = document.getElementById('habit-submit');
+      const habitCancel = document.getElementById('habit-cancel');
+
+      // Reflect a habit's schedule back into the frequency selector.
+      function setFreqFromHabit(h) {
+        const key = [...schedOf(h)].sort((a, b) => a - b).join(',');
+        if (key === '0,1,2,3,4,5,6') freqMode = 'daily';
+        else if (key === '1,2,3,4,5') freqMode = 'weekdays';
+        else { freqMode = 'custom'; customDays = new Set(key.split(',').map(Number)); }
+        renderFreq();
+      }
+      function resetFormToCreate() {
+        editingId = null;
+        habitNameInput.value = '';
+        emojiInput.value = '✅';
+        habitSubmit.textContent = 'Add';
+        habitCancel.classList.add('hidden');
+      }
+      function enterEditMode(h) {
+        editingId = h.id;
+        emojiInput.value = h.emoji;
+        habitNameInput.value = h.name;
+        setColor(COLORS[h.color] ? h.color : 'emerald');
+        setFreqFromHabit(h);
+        habitSubmit.textContent = 'Save';
+        habitCancel.classList.remove('hidden');
+        habitForm.classList.remove('hidden');
+        habitForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        habitNameInput.focus();
+      }
+
+      habitForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const name = document.getElementById('habit-name').value.trim();
+        const name = habitNameInput.value.trim();
         if (!name) return;
-        const emoji = emojiInput.value.trim() || '✅';
-        const body = { name, emoji, color: selectedColor, schedule: currentSchedule() };
-        const res = await fetch('/api/habits', {
-          method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify(body),
-        });
-        if (res.ok) {
-          const habit = await res.json();
-          habits.push(habit);
-          document.getElementById('habit-name').value = '';
-          document.getElementById('habit-form').classList.add('hidden');
-          render();
+        const body = { name, emoji: emojiInput.value.trim() || '✅', color: selectedColor, schedule: currentSchedule() };
+        if (editingId) {
+          const { ok, data } = await api('/api/habits/' + editingId, { method: 'PATCH', body });
+          if (ok) {
+            const h = habits.find((x) => x.id === editingId);
+            if (h) Object.assign(h, data);
+            resetFormToCreate();
+            habitForm.classList.add('hidden');
+            render();
+          }
+        } else {
+          const { ok, data } = await api('/api/habits', { method: 'POST', body });
+          if (ok) {
+            habits.push(data);
+            resetFormToCreate();
+            habitForm.classList.add('hidden');
+            render();
+          }
         }
       });
+      habitCancel.addEventListener('click', () => { resetFormToCreate(); habitForm.classList.add('hidden'); });
 
-      // toggle the add form from the header + button
+      function openCreateForm() {
+        resetFormToCreate();
+        habitForm.classList.remove('hidden');
+        habitForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        habitNameInput.focus();
+      }
+      // header + button toggles a fresh "create" form
       document.getElementById('add-btn').addEventListener('click', () => {
-        const form = document.getElementById('habit-form');
-        const hidden = form.classList.toggle('hidden');
-        if (!hidden) document.getElementById('habit-name').focus();
+        if (habitForm.classList.contains('hidden')) openCreateForm();
+        else habitForm.classList.add('hidden');
       });
+      // empty-state button — same fresh "create" form
+      document.getElementById('empty-add-btn').addEventListener('click', openCreateForm);
 
-      // ---- theme toggle ------------------------------------------------------
-      document.getElementById('theme-toggle').addEventListener('click', () => {
-        const dark = document.documentElement.classList.toggle('dark');
-        localStorage.setItem('theme', dark ? 'dark' : 'light');
-      });
-
-      // ---- PWA install (service worker + in-app install button) -------------
+      // ---- PWA service worker ------------------------------------------------
+      // Registering the SW (+ manifest) is what makes the browser offer its own
+      // install affordance beside the URL bar. We intentionally have no in-app
+      // install button — we rely on the browser's native install icon.
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
       }
-      const installBtn = document.getElementById('install-btn');
-      let deferredPrompt = null;
-      // Chromium fires this when the app is installable; iOS Safari never does
-      // (there it's Share → Add to Home Screen), so the button stays hidden.
-      window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredPrompt = e;
-        installBtn.classList.remove('hidden');
-        installBtn.classList.add('flex');
-      });
-      installBtn.addEventListener('click', async () => {
-        if (!deferredPrompt) return;
-        deferredPrompt.prompt();
-        await deferredPrompt.userChoice;
-        deferredPrompt = null;
-        installBtn.classList.add('hidden');
-        installBtn.classList.remove('flex');
-      });
-      window.addEventListener('appinstalled', () => {
-        installBtn.classList.add('hidden');
-        installBtn.classList.remove('flex');
+
+      // ---- iOS install hint (Safari only; dismissible, shown once) ----------
+      const iosHint = document.getElementById('ios-install');
+      const IOS_HINT_KEY = 'habitrack_ios_hint';
+      function maybeShowIosHint() {
+        const ua = navigator.userAgent || '';
+        const isIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+        if (!isIOS || standalone || localStorage.getItem(IOS_HINT_KEY) === 'dismissed') return;
+        iosHint.classList.remove('hidden');
+        requestAnimationFrame(() => iosHint.classList.remove('translate-y-4', 'opacity-0'));
+      }
+      document.getElementById('ios-install-close').addEventListener('click', () => {
+        iosHint.classList.add('translate-y-4', 'opacity-0');
+        localStorage.setItem(IOS_HINT_KEY, 'dismissed');
+        setTimeout(() => iosHint.classList.add('hidden'), 300);
       });
 
-      // ---- profile gate + data loading --------------------------------------
-      const gate = document.getElementById('gate');
-      const loginForm = document.getElementById('login-form');
-      const loginName = document.getElementById('login-profile-name');
-      const loginPass = document.getElementById('login-passcode');
-      const loginError = document.getElementById('login-error');
-      const pickerView = document.getElementById('picker-view');
-      const profileList = document.getElementById('profile-list');
-      const createForm = document.getElementById('create-form');
-      const createName = document.getElementById('create-name');
-      const createPass = document.getElementById('create-passcode');
-      const createError = document.getElementById('create-error');
+      // ---- data loading ------------------------------------------------------
       const loadError = document.getElementById('load-error');
 
-      let profiles = [];
-
-      function showGate() { gate.classList.remove('hidden'); gate.classList.add('flex'); }
-      function hideGate() { gate.classList.add('hidden'); gate.classList.remove('flex'); }
-      const manageView = document.getElementById('manage-view');
-      function showView(v) {
-        loginForm.classList.toggle('hidden', v !== 'login');
-        pickerView.classList.toggle('hidden', v !== 'picker');
-        createForm.classList.toggle('hidden', v !== 'create');
-        manageView.classList.toggle('hidden', v !== 'manage');
-      }
-
-      async function loadProfiles() {
-        try { profiles = await (await fetch('/api/profiles', { cache: 'no-store' })).json(); }
-        catch { profiles = []; }
-      }
-
-      // Decide which gate view to show based on what profiles exist / is selected.
-      function openGate() {
-        showGate();
-        if (!profiles.length) { showView('create'); createName.focus(); return; }
-        if (!profile) profile = profiles[0]; // default to the first (owner)
-        loginName.textContent = profile.name;
-        loginError.classList.add('hidden');
-        loginPass.value = '';
-        showView('login');
-        loginPass.focus();
-      }
-
-      const TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>';
-      async function renderPicker() {
-        await loadProfiles(); // refresh in case a friend added one on another device
-        profileList.innerHTML = profiles.map((p) => {
-          const current = profile && p.id === profile.id;
-          const deletable = token && profile && (current || profile.admin);
-          return `<div class="flex items-center gap-2">
-              <button type="button" data-pick="${p.id}" class="h-11 flex-1 rounded-xl border border-slate-200 bg-white text-sm font-medium transition hover:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 ${current ? 'ring-1 ring-emerald-400' : ''}">${escapeHtml(p.name)}</button>
-              ${deletable ? `<button type="button" data-del-profile="${p.id}" data-del-name="${escapeHtml(p.name)}" aria-label="Delete ${escapeHtml(p.name)}" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-950/40">${TRASH}</button>` : ''}
-            </div>`;
-        }).join('');
-        document.getElementById('manage-btn').classList.toggle('hidden', !token);
-        document.getElementById('picker-cancel').classList.toggle('hidden', !token);
-        showView('picker');
-      }
-
-      // Returns 'ok' | 'unauthorized' | 'error'
+      // Returns 'ok' | 'unauthorized' | 'forbidden' | 'error'
       async function fetchHabits() {
         try {
-          const res = await fetch('/api/habits', { headers: authHeaders(), cache: 'no-store' });
-          if (res.status === 401) return 'unauthorized';
-          if (!res.ok) return 'error';
-          habits = await res.json();
+          const url = viewing ? `/api/habits?profile=${viewing.id}` : '/api/habits';
+          const { ok, status, data } = await api(url);
+          if (status === 401) return 'unauthorized';
+          if (status === 403) return 'forbidden'; // share was revoked
+          if (!ok) return 'error';
+          habits = data;
           return 'ok';
         } catch { return 'error'; }
       }
 
+      // The header (logo, date, account chip + menu, theme, presence) is the
+      // shared <AppHeader> component; here we only own the app body + view banner.
+      const addBtn = document.getElementById('add-btn');
+      const viewBanner = document.getElementById('view-banner');
       function enterApp() {
-        hideGate();
         loadError.classList.add('hidden');
-        // show the active profile in the header
-        if (profile) {
-          document.getElementById('profile-chip-name').textContent = profile.name;
-          document.getElementById('profile-chip').classList.remove('hidden');
-          document.getElementById('profile-chip').classList.add('flex');
+        if (viewing) {
+          // read-only mode: banner + no add button (chip is hidden by AppHeader)
+          document.getElementById('view-banner-name').textContent = viewing.name;
+          viewBanner.classList.remove('hidden'); viewBanner.classList.add('flex');
+          addBtn.classList.add('hidden');
+          document.getElementById('habit-form').classList.add('hidden');
+        } else {
+          viewBanner.classList.add('hidden'); viewBanner.classList.remove('flex');
+          addBtn.classList.remove('hidden');
         }
         render();
         initRealtime();
+        setTimeout(maybeShowIosHint, 1200); // let content paint first
       }
 
       async function refresh() {
@@ -737,6 +774,7 @@ const today = new Date().toLocaleDateString('en-US', {
         const r = await fetchHabits();
         if (r === 'ok') { render(); loadError.classList.add('hidden'); }
         else if (r === 'unauthorized') { signOut(); }
+        else if (r === 'forbidden') { exitViewMode(); } // access was revoked
       }
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') refresh();
@@ -745,8 +783,15 @@ const today = new Date().toLocaleDateString('en-US', {
 
       function signOut() {
         token = ''; localStorage.removeItem(TK);
-        openGate();
+        location.href = '/profile';
       }
+
+      // Leave read-only view of a shared profile (reload to rebind realtime).
+      function exitViewMode() {
+        localStorage.removeItem(VIEW);
+        location.reload();
+      }
+      document.getElementById('view-exit').addEventListener('click', exitViewMode);
 
       // ---- realtime: apply another device's change surgically ---------------
       function applyRemote(p) {
@@ -765,10 +810,13 @@ const today = new Date().toLocaleDateString('en-US', {
           if (!habits.some((x) => x.id === p.id)) return;
           habits = habits.filter((x) => x.id !== p.id);
           expanded.delete(p.id); calView.delete(p.id);
-        } else if (p.type === 'rename') {
-          const h = habits.find((x) => x.id === p.id);
-          if (!h || h.name === p.name) return;
-          h.name = p.name;
+        } else if (p.type === 'update') {
+          const h = habits.find((x) => x.id === p.habit.id);
+          if (!h) return;
+          Object.assign(h, p.habit); // days aren't in the payload, so they're preserved
+        } else if (p.type === 'reorder') {
+          const pos = new Map(p.ids.map((id, i) => [id, i]));
+          habits.sort((a, b) => (pos.get(a.id) ?? 1e9) - (pos.get(b.id) ?? 1e9));
         } else return;
         render();
       }
@@ -778,170 +826,39 @@ const today = new Date().toLocaleDateString('en-US', {
         if (realtimeStarted || !profile) return;
         realtimeStarted = true;
         try {
-          const res = await fetch('/api/rt-config', { cache: 'no-store' });
-          if (!res.ok) return;
-          const cfg = await res.json();
-          if (!cfg.enabled) return;
-          const pusher = await connectRealtime({ key: cfg.key, cluster: cfg.cluster, channel: `habitrack-${profile.id}`, onEvent: applyRemote });
+          const { ok, data: cfg } = await api('/api/rt-config');
+          if (!ok || !cfg.enabled) return;
+          const pusher = await connectRealtime({ key: cfg.key, cluster: cfg.cluster, channel: `habitrack-${dataId()}`, onEvent: applyRemote });
           const setId = () => { socketId = pusher.connection.socket_id; };
           pusher.connection.bind('connected', setId);
           if (pusher.connection.socket_id) setId();
         } catch { /* best-effort */ }
       }
 
-      // ---- gate interactions ------------------------------------------------
-      document.getElementById('switch-profile').addEventListener('click', renderPicker);
-      document.getElementById('profile-chip').addEventListener('click', () => { showGate(); renderPicker(); });
-      document.getElementById('picker-cancel').addEventListener('click', () => { if (token) hideGate(); });
-      document.getElementById('new-profile-btn').addEventListener('click', () => {
-        createName.value = ''; createPass.value = ''; createError.classList.add('hidden');
-        showView('create'); createName.focus();
-      });
-      document.getElementById('create-back').addEventListener('click', () => {
-        profiles.length ? openGate() : renderPicker();
-      });
-      profileList.addEventListener('click', (e) => {
-        const trash = e.target.closest('[data-del-profile]');
-        if (trash) {
-          const id = Number(trash.dataset.delProfile);
-          const name = trash.dataset.delName;
-          askConfirm(`Delete profile “${name}” and all its habits? This can't be undone.`, () => deleteProfileById(id));
+      // ---- boot -------------------------------------------------------------
+      // Middleware guarantees a valid session for this page. Profile info for the
+      // UI lives in localStorage; if it's missing we can't label things, so bounce.
+      async function boot() {
+        if (viewing && !profile) { localStorage.removeItem(VIEW); viewing = null; }
+        if (!profile) { location.href = '/profile'; return; }
+
+        if (!viewing) {
+          // own profile: render the SSR'd habits immediately, then reconcile.
+          habits = initialHabits;
+          enterApp();
+          const r = await fetchHabits();
+          if (r === 'ok') render();
+          else if (r === 'unauthorized') signOut();
           return;
         }
-        const b = e.target.closest('[data-pick]');
-        if (!b) return;
-        profile = profiles.find((p) => p.id === Number(b.dataset.pick));
-        openGate();
-      });
 
-      // Delete a profile (self → sign out & reload; someone else as admin → refresh list).
-      async function deleteProfileById(id) {
-        try {
-          const res = await fetch('/api/profiles/' + id, { method: 'DELETE', headers: authHeaders() });
-          if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Could not delete profile.'); return; }
-          if (profile && id === profile.id) {
-            token = ''; profile = null;
-            localStorage.removeItem(TK); localStorage.removeItem(PID);
-            location.reload();
-          } else {
-            renderPicker();
-          }
-        } catch { alert('Could not delete profile.'); }
+        // view-mode: SSR data is our own, not the viewed profile — fetch it.
+        let r = await fetchHabits();
+        if (r === 'forbidden') { localStorage.removeItem(VIEW); viewing = null; habits = initialHabits; enterApp(); return; }
+        if (r === 'ok') { enterApp(); return; }
+        if (r === 'unauthorized') { location.href = '/profile'; return; }
+        loadError.classList.remove('hidden'); // network error — keep shell, show error
       }
-
-      // ---- manage profile (rename / change passcode / delete self) ----------
-      const manageMsg = document.getElementById('manage-msg');
-      function showManageMsg(text, ok) {
-        manageMsg.textContent = text;
-        manageMsg.className = `mt-2 text-xs font-medium ${ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'}`;
-        manageMsg.classList.remove('hidden');
-      }
-      document.getElementById('manage-btn').addEventListener('click', () => {
-        document.getElementById('manage-name').textContent = profile.name;
-        document.getElementById('manage-rename').value = profile.name;
-        document.getElementById('manage-cur-pass').value = '';
-        document.getElementById('manage-new-pass').value = '';
-        manageMsg.classList.add('hidden');
-        showView('manage');
-      });
-      document.getElementById('manage-back').addEventListener('click', renderPicker);
-      document.getElementById('manage-rename-save').addEventListener('click', async () => {
-        const name = document.getElementById('manage-rename').value.trim();
-        if (!name) return;
-        try {
-          const res = await fetch('/api/profiles/' + profile.id, {
-            method: 'PATCH', headers: authHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ name }),
-          });
-          if (!res.ok) { const d = await res.json().catch(() => ({})); showManageMsg(d.error || 'Rename failed.', false); return; }
-          profile.name = name;
-          localStorage.setItem(PID, JSON.stringify(profile));
-          document.getElementById('profile-chip-name').textContent = name;
-          document.getElementById('manage-name').textContent = name;
-          showManageMsg('Name updated.', true);
-        } catch { showManageMsg('Rename failed.', false); }
-      });
-      document.getElementById('manage-pass-save').addEventListener('click', async () => {
-        const currentPasscode = document.getElementById('manage-cur-pass').value;
-        const newPasscode = document.getElementById('manage-new-pass').value;
-        if (newPasscode.length < 4) { showManageMsg('New passcode must be at least 4 characters.', false); return; }
-        try {
-          const res = await fetch('/api/profiles/' + profile.id, {
-            method: 'PATCH', headers: authHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ currentPasscode, newPasscode }),
-          });
-          if (!res.ok) { const d = await res.json().catch(() => ({})); showManageMsg(d.error || 'Could not change passcode.', false); return; }
-          document.getElementById('manage-cur-pass').value = '';
-          document.getElementById('manage-new-pass').value = '';
-          showManageMsg('Passcode changed.', true);
-        } catch { showManageMsg('Could not change passcode.', false); }
-      });
-      document.getElementById('manage-delete').addEventListener('click', () => {
-        askConfirm(`Delete your profile “${profile.name}” and all its habits? This can't be undone.`, () => deleteProfileById(profile.id));
-      });
-
-      loginForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const passcode = loginPass.value;
-        if (!passcode) return;
-        loginError.classList.add('hidden');
-        try {
-          const res = await fetch('/api/login', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ profileId: profile.id, passcode }),
-          });
-          if (res.status === 401) { loginError.classList.remove('hidden'); loginPass.select(); return; }
-          if (!res.ok) throw new Error();
-          const data = await res.json();
-          token = data.token; profile = { id: data.id, name: data.name, admin: !!data.admin };
-          localStorage.setItem(TK, token);
-          localStorage.setItem(PID, JSON.stringify(profile));
-          if (realtimeStarted) { location.reload(); return; } // switching — rebind cleanly
-          const r = await fetchHabits();
-          if (r === 'ok') enterApp();
-        } catch {
-          loginError.textContent = 'Something went wrong — try again.';
-          loginError.classList.remove('hidden');
-        }
-      });
-
-      createForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const name = createName.value.trim();
-        const passcode = createPass.value;
-        createError.classList.add('hidden');
-        if (!name) { createError.textContent = 'Name is required.'; createError.classList.remove('hidden'); return; }
-        if (passcode.length < 4) { createError.textContent = 'Passcode must be at least 4 characters.'; createError.classList.remove('hidden'); return; }
-        try {
-          const res = await fetch('/api/profiles', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, passcode }),
-          });
-          if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || ''); }
-          const data = await res.json();
-          token = data.token; profile = { id: data.id, name: data.name, admin: !!data.admin };
-          localStorage.setItem(TK, token);
-          localStorage.setItem(PID, JSON.stringify(profile));
-          if (realtimeStarted) { location.reload(); return; } // switching — rebind cleanly
-          const r = await fetchHabits();
-          if (r === 'ok') enterApp();
-        } catch (err) {
-          createError.textContent = err.message || 'Could not create profile.';
-          createError.classList.remove('hidden');
-        }
-      });
-
-      async function boot() {
-        await loadProfiles();
-        if (token && profile) {
-          const r = await fetchHabits();
-          if (r === 'ok') { enterApp(); return; }
-          if (r === 'unauthorized') { token = ''; localStorage.removeItem(TK); }
-          else { hideGate(); loadError.classList.remove('hidden'); return; }
-        }
-        openGate();
-      }
-
       boot();
     </script>
   </body>

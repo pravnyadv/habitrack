@@ -1,0 +1,19 @@
+---
+import ProfileLayout from '../../layouts/ProfileLayout.astro';
+import Overview from '../../components/Overview.jsx';
+import { getSql, listHabits } from '../../lib/db.js';
+import { verifyToken, TOKEN_COOKIE } from '../../lib/auth.js';
+
+const env = Astro.locals.runtime?.env;
+const pid = await verifyToken(Astro.cookies.get(TOKEN_COOKIE)?.value, env);
+if (!pid) return Astro.redirect('/profile/switch');
+// Neon returns created_at as a Date; compute.js expects an ISO string.
+const habits = (await listHabits(getSql(env), pid)).map((h) => ({
+  ...h,
+  created_at: h.created_at instanceof Date ? h.created_at.toISOString() : h.created_at,
+}));
+---
+
+<ProfileLayout heading="Profile" tab="overview" backHref="/">
+  <Overview client:load initialHabits={habits} profileId={pid} />
+</ProfileLayout>
