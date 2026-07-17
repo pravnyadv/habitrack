@@ -11,6 +11,14 @@ html {
   text-rendering: optimizeLegibility;
 }
 
+/* The app is mobile-first and never scrolls sideways (day strips scroll inside
+   their own .no-scrollbar containers). Guard against any element bleeding past
+   the viewport on narrow phones (e.g. iPhone 13 @ 390px). */
+html, body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 /* Respect iPhone safe areas (Dynamic Island / home indicator) when installed
    to the home screen and running standalone. */
 body {
