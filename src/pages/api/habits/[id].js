@@ -1,5 +1,6 @@
 import { getSql, deleteHabit, renameHabit } from '../../../lib/db.js';
-import { isAuthed, unauthorized } from '../../../lib/auth.js';
+import { authedProfile, unauthorized } from '../../../lib/auth.js';
+import { broadcast } from '../../../lib/realtime.js';
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -8,18 +9,24 @@ const json = (data, status = 200) =>
   });
 
 export async function DELETE({ params, request, locals }) {
-  if (!isAuthed(request, locals.runtime?.env)) return unauthorized();
-  const sql = getSql(locals.runtime?.env);
-  await deleteHabit(sql, Number(params.id));
+  const env = locals.runtime?.env;
+  const profileId = await authedProfile(request, env);
+  if (!profileId) return unauthorized();
+  const id = Number(params.id);
+  await deleteHabit(getSql(env), profileId, id);
+  await broadcast(env, profileId, { type: 'delete', id }, request.headers.get('x-socket-id'));
   return json({ ok: true });
 }
 
 export async function PATCH({ params, request, locals }) {
-  if (!isAuthed(request, locals.runtime?.env)) return unauthorized();
-  const sql = getSql(locals.runtime?.env);
+  const env = locals.runtime?.env;
+  const profileId = await authedProfile(request, env);
+  if (!profileId) return unauthorized();
   const body = await request.json().catch(() => ({}));
   const name = (body.name || '').trim();
   if (!name) return json({ error: 'Name is required' }, 400);
-  const habit = await renameHabit(sql, Number(params.id), name);
+  const id = Number(params.id);
+  const habit = await renameHabit(getSql(env), profileId, id, name);
+  await broadcast(env, profileId, { type: 'rename', id, name }, request.headers.get('x-socket-id'));
   return json(habit);
 }

@@ -13,7 +13,9 @@
   "dependencies": {
     "@astrojs/cloudflare": "^12.6.13",
     "@neondatabase/serverless": "^1.0.2",
-    "astro": "^5.16.2"
+    "astro": "^5.16.2",
+    "pusher": "^5.3.4",
+    "pusher-js": "^8.5.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.0",

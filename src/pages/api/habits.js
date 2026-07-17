@@ -1,5 +1,6 @@
 import { getSql, listHabits, createHabit } from '../../lib/db.js';
-import { isAuthed, unauthorized } from '../../lib/auth.js';
+import { authedProfile, unauthorized } from '../../lib/auth.js';
+import { broadcast } from '../../lib/realtime.js';
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -8,15 +9,18 @@ const json = (data, status = 200) =>
   });
 
 export async function GET({ request, locals }) {
-  if (!isAuthed(request, locals.runtime?.env)) return unauthorized();
-  const sql = getSql(locals.runtime?.env);
-  const habits = await listHabits(sql);
+  const env = locals.runtime?.env;
+  const profileId = await authedProfile(request, env);
+  if (!profileId) return unauthorized();
+  const habits = await listHabits(getSql(env), profileId);
   return json(habits);
 }
 
 export async function POST({ request, locals }) {
-  if (!isAuthed(request, locals.runtime?.env)) return unauthorized();
-  const sql = getSql(locals.runtime?.env);
+  const env = locals.runtime?.env;
+  const profileId = await authedProfile(request, env);
+  if (!profileId) return unauthorized();
+  const sql = getSql(env);
   const body = await request.json().catch(() => ({}));
   const name = (body.name || '').trim();
   if (!name) return json({ error: 'Name is required' }, 400);
@@ -30,6 +34,8 @@ export async function POST({ request, locals }) {
     : [0, 1, 2, 3, 4, 5, 6];
   if (sched.length === 0) sched = [0, 1, 2, 3, 4, 5, 6];
 
-  const habit = await createHabit(sql, name, emoji, color, sched.join(','));
-  return json({ ...habit, days: [] }, 201);
+  const habit = await createHabit(sql, profileId, name, emoji, color, sched.join(','));
+  const full = { ...habit, days: [] };
+  await broadcast(env, profileId, { type: 'add', habit: full }, request.headers.get('x-socket-id'));
+  return json(full, 201);
 }

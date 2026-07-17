@@ -35,19 +35,72 @@ const today = new Date().toLocaleDateString('en-US', {
   </head>
   <body class="h-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans antialiased">
 
-    <!-- Passcode gate: covers everything until unlocked (passcode saved in localStorage) -->
+    <!-- Profile gate: covers everything until a profile is unlocked -->
     <div id="gate" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-50 px-6 dark:bg-slate-950">
       <div class="w-full max-w-xs text-center">
         <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500 text-3xl shadow-sm">🦫</div>
         <h1 class="text-lg font-bold">Habitrack</h1>
-        <p class="mt-1 mb-5 text-sm text-slate-500 dark:text-slate-400">Enter your passcode to continue</p>
-        <form id="gate-form">
-          <input id="gate-input" type="password" inputmode="text" autocomplete="current-password"
+
+        <!-- Login view: selected profile + passcode -->
+        <form id="login-form" class="mt-5 hidden">
+          <p class="mb-3 text-sm text-slate-500 dark:text-slate-400">
+            <span id="login-profile-name" class="font-semibold text-slate-700 dark:text-slate-200"></span>
+            <button type="button" id="switch-profile" class="ml-1 text-emerald-600 hover:underline dark:text-emerald-400">Change</button>
+          </p>
+          <input id="login-passcode" type="password" inputmode="text" autocomplete="current-password"
             placeholder="Passcode" aria-label="Passcode"
             class="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-center text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
-          <p id="gate-error" class="mt-2 hidden text-xs font-medium text-rose-500">Wrong passcode — try again.</p>
+          <p id="login-error" class="mt-2 hidden text-xs font-medium text-rose-500">Wrong passcode — try again.</p>
           <button type="submit"
             class="mt-4 h-11 w-full rounded-xl bg-emerald-500 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 active:scale-95">Unlock</button>
+        </form>
+
+        <!-- Picker view: choose a profile -->
+        <div id="picker-view" class="mt-5 hidden">
+          <p class="mb-3 text-sm text-slate-500 dark:text-slate-400">Choose a profile</p>
+          <div id="profile-list" class="flex flex-col gap-2"></div>
+          <button type="button" id="new-profile-btn"
+            class="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 py-2.5 text-sm font-medium text-slate-500 transition hover:border-slate-400 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+            New profile
+          </button>
+          <button type="button" id="manage-btn" class="mt-3 hidden text-xs font-medium text-slate-500 hover:underline dark:text-slate-400">Manage my profile</button>
+          <button type="button" id="picker-cancel" class="mt-3 hidden text-xs text-slate-400 hover:underline">Cancel</button>
+        </div>
+
+        <!-- Manage view (rename / change passcode / delete the signed-in profile) -->
+        <div id="manage-view" class="mt-5 hidden text-left">
+          <p class="mb-3 text-center text-sm text-slate-500 dark:text-slate-400">Manage <span id="manage-name" class="font-semibold text-slate-700 dark:text-slate-200"></span></p>
+          <label class="mb-1 block text-[11px] font-medium text-slate-400">Profile name</label>
+          <div class="mb-4 flex gap-2">
+            <input id="manage-rename" autocomplete="off" aria-label="Profile name"
+              class="h-10 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
+            <button type="button" id="manage-rename-save" class="h-10 shrink-0 rounded-xl bg-slate-100 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Save</button>
+          </div>
+          <label class="mb-1 block text-[11px] font-medium text-slate-400">Change passcode</label>
+          <input id="manage-cur-pass" type="password" autocomplete="current-password" placeholder="Current passcode" aria-label="Current passcode"
+            class="mb-2 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
+          <div class="flex gap-2">
+            <input id="manage-new-pass" type="password" autocomplete="new-password" placeholder="New passcode (4+)" aria-label="New passcode"
+              class="h-10 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
+            <button type="button" id="manage-pass-save" class="h-10 shrink-0 rounded-xl bg-slate-100 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Change</button>
+          </div>
+          <p id="manage-msg" class="mt-2 hidden text-xs font-medium"></p>
+          <button type="button" id="manage-delete" class="mt-5 w-full rounded-xl py-2.5 text-sm font-medium text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-950/40">Delete this profile</button>
+          <button type="button" id="manage-back" class="mt-2 block w-full text-center text-xs text-slate-400 hover:underline">Back</button>
+        </div>
+
+        <!-- Create view -->
+        <form id="create-form" class="mt-5 hidden">
+          <p class="mb-3 text-sm text-slate-500 dark:text-slate-400">Create a profile</p>
+          <input id="create-name" placeholder="Profile name" autocomplete="off" aria-label="Profile name"
+            class="mb-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-center text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
+          <input id="create-passcode" type="password" inputmode="text" autocomplete="new-password" placeholder="Choose a passcode (4+ chars)" aria-label="Passcode"
+            class="h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-center text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-900" />
+          <p id="create-error" class="mt-2 hidden text-xs font-medium text-rose-500"></p>
+          <button type="submit"
+            class="mt-4 h-11 w-full rounded-xl bg-emerald-500 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 active:scale-95">Create & enter</button>
+          <button type="button" id="create-back" class="mt-2 text-xs text-slate-400 hover:underline">Back</button>
         </form>
       </div>
     </div>
@@ -76,14 +129,25 @@ const today = new Date().toLocaleDateString('en-US', {
               <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2.4" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
             </button>
           </h1>
-          <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{today}</p>
+          <div class="mt-1 flex items-center gap-2">
+            <p class="text-sm text-slate-500 dark:text-slate-400">{today}</p>
+            <button id="profile-chip" title="Switch profile"
+              class="hidden items-center gap-1 rounded-full bg-slate-100 py-0.5 pl-2 pr-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+              <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0" /></svg>
+              <span id="profile-chip-name"></span>
+              <svg class="h-3 w-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+          </div>
         </div>
         <div class="flex items-center gap-2">
-          <div class="relative">
-            <select id="year-select" aria-label="Year"
-              class="cursor-pointer appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm font-medium text-slate-500 shadow-sm outline-none transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white"></select>
-            <svg class="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
-          </div>
+          <button id="install-btn" aria-label="Install app" title="Install app"
+            class="hidden items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-emerald-600 shadow-sm transition hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+          </button>
+          <a href="/overview" aria-label="Overview" title="Overview"
+            class="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
+          </a>
           <button id="theme-toggle" aria-label="Toggle theme"
             class="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
             <svg class="hidden h-5 w-5 dark:block" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>
@@ -142,74 +206,27 @@ const today = new Date().toLocaleDateString('en-US', {
       </p>
     </div>
 
-    <script is:inline>
+    <script>
+      import { COLORS, COLORS_DARK, MONTHS, WD, TODAY, iso, pad2, addDays, dow, schedOf, stats, windowStart, heatmapBlock, githubGraph, escapeHtml, connectRealtime } from '../lib/compute.js';
+
       // ---- constants ---------------------------------------------------------
-      const COLORS = {
-        emerald: '#10b981', sky: '#0ea5e9', blue: '#3b82f6', violet: '#8b5cf6',
-        rose: '#f43f5e', amber: '#f59e0b', orange: '#f97316', teal: '#14b8a6',
-        pink: '#ec4899', lime: '#84cc16',
-      };
       const EMOJIS = ['✅','💧','📖','🏃','🧘','💪','🥗','😴','✍️','🎯','☀️','🎸','💊','🚭','📵'];
 
       let habits = [];
       const expanded = new Set();
-      let pendingDelete = null;
-      const CURRENT_YEAR = Number(TODAY.slice(0, 4));
-      let activeYear = CURRENT_YEAR; // the year the calendar + graph are scoped to
 
-      // ---- passcode (stored in localStorage, sent as a header) ----------------
-      const PC_KEY = 'habitrack_passcode';
-      let passcode = localStorage.getItem(PC_KEY) || '';
-      const authHeaders = (extra) => (passcode ? { 'x-passcode': passcode, ...extra } : { ...extra });
-
-      // ---- date helpers ------------------------------------------------------
-      const iso = (d) => {
-        const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-        return z.toISOString().slice(0, 10);
-      };
-      const TODAY = iso(new Date());
-      const addDays = (isoStr, n) => {
-        const d = new Date(isoStr + 'T00:00:00');
-        d.setDate(d.getDate() + n);
-        return iso(d);
-      };
-
-      // schedule = Set of weekday numbers (0=Sun … 6=Sat) the habit is due on
-      const dow = (isoStr) => new Date(isoStr + 'T00:00:00').getDay();
-      const schedOf = (h) => new Set((h.schedule || '0,1,2,3,4,5,6').split(',').map(Number));
-
-      // ---- stats (only scheduled days count) --------------------------------
-      function stats(habit) {
-        const set = new Set(habit.days);
-        const sched = schedOf(habit);
-        const due = (d) => sched.has(dow(d));
-
-        // current streak: walk back over due days; today may be still-open (grace)
-        let cur = 0;
-        for (let d = TODAY, guard = 0; guard < 800; d = addDays(d, -1), guard++) {
-          if (!due(d)) continue;              // rest day — skip, doesn't break streak
-          if (set.has(d)) cur++;
-          else if (d === TODAY) continue;     // today not done yet — don't break
-          else break;
-        }
-
-        // longest streak: longest run of consecutive due days all done
-        const start = habit.days.length ? [...set].sort()[0] : TODAY;
-        let longest = 0, run = 0;
-        for (let d = start; d <= TODAY; d = addDays(d, 1)) {
-          if (!due(d)) continue;
-          if (set.has(d)) { run++; if (run > longest) longest = run; }
-          else run = 0;
-        }
-
-        // last 30 days completion rate over due days only
-        let dueCount = 0, hit = 0;
-        for (let i = 0; i < 30; i++) {
-          const d = addDays(TODAY, -i);
-          if (due(d)) { dueCount++; if (set.has(d)) hit++; }
-        }
-        return { current: cur, longest, total: set.size, rate30: dueCount ? Math.round((hit / dueCount) * 100) : 0 };
-      }
+      // ---- auth: signed token + selected profile (both in localStorage) ------
+      const TK = 'habitrack_token';
+      const PID = 'habitrack_profile';
+      let token = localStorage.getItem(TK) || '';
+      let profile = null; // { id, name }
+      try { profile = JSON.parse(localStorage.getItem(PID) || 'null'); } catch {}
+      let socketId = null; // our realtime socket, sent so the server excludes us
+      const authHeaders = (extra) => ({
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(socketId ? { 'x-socket-id': socketId } : {}),
+        ...extra,
+      });
 
       // ---- rendering ---------------------------------------------------------
       const list = document.getElementById('habit-list');
@@ -259,14 +276,11 @@ const today = new Date().toLocaleDateString('en-US', {
       }
 
       // ---- LEVEL 1: single-month calendar (current month by default) ---------
-      const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      const pad2 = (n) => String(n).padStart(2, '0');
       const calView = new Map(); // habitId -> {y, m} of the month being viewed
       function getCalView(id) {
         if (!calView.has(id)) {
-          // current month for this year; December for a past year
-          const m = activeYear === CURRENT_YEAR ? new Date(TODAY + 'T00:00:00').getMonth() : 11;
-          calView.set(id, { y: activeYear, m });
+          const d = new Date(TODAY + 'T00:00:00');
+          calView.set(id, { y: d.getFullYear(), m: d.getMonth() });
         }
         return calView.get(id);
       }
@@ -276,6 +290,7 @@ const today = new Date().toLocaleDateString('en-US', {
         const set = new Set(habit.days);
         const sched = schedOf(habit);
         const color = COLORS[habit.color] || COLORS.emerald;
+        const colorDark = COLORS_DARK[habit.color] || COLORS_DARK.emerald;
         const t = new Date(TODAY + 'T00:00:00');
         const atCurrent = (y === t.getFullYear() && m === t.getMonth());
         const monthLabel = new Date(y, m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -283,29 +298,58 @@ const today = new Date().toLocaleDateString('en-US', {
         const firstDow = (new Date(y, m, 1).getDay() + 6) % 7; // Mon=0
         const daysInMonth = new Date(y, m + 1, 0).getDate();
 
-        const wdRow = WD.map((w) => `<div class="text-center text-[11px] font-medium text-slate-400 dark:text-slate-500">${w}</div>`).join('');
+        // habit's active-from date = earlier of created date / first check-in.
+        // Nothing before this can be "missed" — the habit didn't exist yet.
+        const firstCheckin = habit.days.length ? habit.days.reduce((a, b) => (a < b ? a : b)) : null;
+        const created = (habit.created_at || '').slice(0, 10) || null;
+        const activeFrom = (firstCheckin && created) ? (firstCheckin < created ? firstCheckin : created) : (firstCheckin || created);
 
-        // centered square cells (36px) so done days read as tiles, not tall pills
-        const cellBase = 'mx-auto flex h-9 w-9 items-center justify-center rounded-lg text-sm tabular-nums';
+        // Weekday headers: medium/secondary gray structural labels.
+        const wdRow = WD.map((w) => `<div class="text-center text-[11px] font-medium text-slate-500 dark:text-slate-400">${w}</div>`).join('');
+
+        // Hybrid streak-tile calendar. Each cell is an aspect-square grid slot;
+        // an absolutely-centered inner "tile" carries the fill, the number sits
+        // centered on top. Columns touch (gap-x-0) so full-width done tiles form
+        // one continuous capsule; corners square on any side that abuts another
+        // done day (same-row link or row-wrap), rounded otherwise.
+        const R = 12;                        // outer corner radius (px)
+        const HGT = '78%';                   // tile height within the square cell
+        const tint = `${color}20`;           // ~12% tint of the habit color (missed)
+        const CTR = 'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2';
+        // done numbers are 500 (heavier); every other state is 400 — weight is
+        // added per-state below, not baked into NUM.
+        const NUM = `${CTR} z-10 text-sm tabular-nums`;
+
         let cells = '';
-        for (let i = 0; i < firstDow; i++) cells += '<div class="h-9"></div>';
+        for (let i = 0; i < firstDow; i++) cells += '<div></div>';
         for (let d = 1; d <= daysInMonth; d++) {
           const ds = `${y}-${pad2(m + 1)}-${pad2(d)}`;
           const future = ds > TODAY;
+          const beforeActive = activeFrom && ds < activeFrom;
           const scheduled = sched.has(new Date(y, m, d).getDay());
           const done = set.has(ds);
           const isToday = ds === TODAY;
-          if (future) {
-            cells += `<div class="${cellBase} text-slate-200 dark:text-slate-700">${d}</div>`;
-          } else if (!scheduled) {
-            cells += `<div class="${cellBase} text-slate-300 dark:text-slate-700" title="${ds} · rest day">${d}</div>`;
+
+          if (done) {
+            // square the side that abuts another done day; full-width when linked
+            const leftSq = set.has(addDays(ds, -1));
+            const rightSq = set.has(addDays(ds, 1));
+            const full = leftSq || rightSq;
+            const br = `${leftSq ? 0 : R}px ${rightSq ? 0 : R}px ${rightSq ? 0 : R}px ${leftSq ? 0 : R}px`;
+            const fill = `<span class="${CTR}" style="width:${full ? '100%' : '80%'};height:${HGT};background:${color};border-radius:${br}"></span>`;
+            cells += `<button data-day="${ds}" data-habit="${habit.id}" class="day relative aspect-square transition active:opacity-70" title="${ds} · done">${fill}<span class="${NUM} font-medium text-white">${d}</span></button>`;
+          } else if (isToday && scheduled) {
+            // today, not done — transparent tile with an inset ring in habit color
+            const fill = `<span class="${CTR}" style="width:80%;height:${HGT};border-radius:${R}px;box-shadow:inset 0 0 0 1.5px ${color}"></span>`;
+            cells += `<button data-day="${ds}" data-habit="${habit.id}" class="day relative aspect-square transition active:opacity-70" title="${ds}">${fill}<span class="${NUM} font-normal" style="color:${colorDark}">${d}</span></button>`;
+          } else if (scheduled && !future && !beforeActive) {
+            // missed (past, active, scheduled, not done) — light tint, discrete tile
+            const fill = `<span class="${CTR}" style="width:80%;height:${HGT};background:${tint};border-radius:10px"></span>`;
+            cells += `<button data-day="${ds}" data-habit="${habit.id}" class="day relative aspect-square transition active:opacity-70" title="${ds} · missed">${fill}<span class="${NUM} font-normal" style="color:${colorDark}">${d}</span></button>`;
           } else {
-            cells += `<button data-day="${ds}" data-habit="${habit.id}"
-              class="day ${cellBase} font-medium transition active:scale-90
-                ${done ? 'text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}
-                ${isToday ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-900' : ''}"
-              style="${done ? `background:${color}` : ''};${isToday ? `--tw-ring-color:${color}` : ''}"
-              title="${ds}">${d}</button>`;
+            // before-created / future / rest day — no fill, legible-but-subordinate
+            // gray. The ONLY state that uses gray (never a global default).
+            cells += `<div class="relative flex aspect-square items-center justify-center text-sm font-normal tabular-nums text-slate-500 dark:text-slate-400">${d}</div>`;
           }
         }
 
@@ -314,62 +358,25 @@ const today = new Date().toLocaleDateString('en-US', {
             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="${dir === 'prev' ? 'M15.75 19.5 8.25 12l7.5-7.5' : 'm8.25 4.5 7.5 7.5-7.5 7.5'}"/></svg>
           </button>`;
 
+        const legend = `<div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500 dark:text-slate-400">
+            <span class="flex items-center gap-1.5"><span class="inline-block h-3 w-6 rounded-full" style="background:${color}"></span>Streak</span>
+            <span class="flex items-center gap-1.5"><span class="inline-block h-3.5 w-3.5 rounded" style="background:${tint}"></span>Missed</span>
+            <span class="flex items-center gap-1.5"><span class="inline-block h-3.5 w-3.5 rounded" style="box-shadow:inset 0 0 0 1.5px ${color}"></span>Today</span>
+          </div>`;
+
+        // Cap the calendar footprint (~70% of full width) so the tiles are ~30%
+        // more compact. Cells shrink uniformly; inner-tile percentages are
+        // unchanged, so connected done-tiles stay 100%-of-cell and still touch.
         return `
-          <div>
+          <div class="mx-auto max-w-[420px]">
             <div class="mb-3 flex items-center justify-between">
               ${arrowBtn('prev', `data-cal-prev="${habit.id}"`)}
               <span class="text-sm font-semibold">${monthLabel}</span>
               ${atCurrent ? '<span class="h-8 w-8" aria-hidden="true"></span>' : arrowBtn('next', `data-cal-next="${habit.id}"`)}
             </div>
-            <div class="grid grid-cols-7 gap-1">${wdRow}</div>
-            <div class="mt-1 grid grid-cols-7 gap-1">${cells}</div>
-          </div>`;
-      }
-
-      // ---- LEVEL 2: GitHub-style contribution graph (analytic) ---------------
-      const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      // Full calendar-year heatmap for the selected year. Fits the width (no
-      // horizontal scroll) via an aspect-ratio grid, so nothing hides off-screen.
-      function githubGraph(habit) {
-        const set = new Set(habit.days);
-        const sched = schedOf(habit);
-        const color = COLORS[habit.color] || COLORS.emerald;
-        const yr = activeYear;
-
-        const jan1 = new Date(yr, 0, 1);
-        const gridStart = new Date(yr, 0, 1 - jan1.getDay());        // Sunday on/before Jan 1
-        const dec31 = new Date(yr, 11, 31);
-        const gridEnd = new Date(yr, 11, 31 + (6 - dec31.getDay())); // Saturday on/after Dec 31
-        const totalDays = Math.round((gridEnd - gridStart) / 86400000) + 1;
-        const weeks = Math.round(totalDays / 7);
-
-        let cells = '', count = 0;
-        for (let i = 0; i < totalDays; i++) {
-          const dt = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
-          const ds = iso(dt);
-          const inYear = dt.getFullYear() === yr;
-          const future = ds > TODAY;
-          const done = set.has(ds);
-          if (inYear && done) count++;
-          let cls = 'rounded-[1px] ', style = '';
-          if (!inYear || future) cls += 'opacity-0';
-          else if (done) style = `background:${color}`;
-          else if (!sched.has(dt.getDay())) cls += 'bg-slate-100/70 dark:bg-slate-800/40'; // rest day
-          else cls += 'bg-slate-200/80 dark:bg-slate-800';                                  // missed
-          cells += `<span class="${cls}" style="${style}" title="${inYear ? ds + (done ? ' · done' : '') : ''}"></span>`;
-        }
-
-        return `
-          <div>
-            <p class="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">${count} check-in${count === 1 ? '' : 's'} in ${yr}</p>
-            <div class="flex justify-between px-px text-[9px] leading-none text-slate-400 dark:text-slate-500">${MONTHS.map((m) => `<span>${m}</span>`).join('')}</div>
-            <div class="mt-1 grid gap-[2px]" style="grid-auto-flow:column;grid-template-rows:repeat(7,1fr);grid-auto-columns:minmax(0,1fr);aspect-ratio:${weeks}/7">${cells}</div>
-            <div class="mt-2 flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-slate-500">
-              <span>Missed</span>
-              <span class="h-[10px] w-[10px] rounded-[2px] bg-slate-200/80 dark:bg-slate-800"></span>
-              <span class="h-[10px] w-[10px] rounded-[2px]" style="background:${color}"></span>
-              <span>Done</span>
-            </div>
+            <div class="grid grid-cols-7 gap-x-0">${wdRow}</div>
+            <div class="mt-1 grid grid-cols-7 gap-x-0 gap-y-[5px]">${cells}</div>
+            ${legend}
           </div>`;
       }
 
@@ -407,36 +414,23 @@ const today = new Date().toLocaleDateString('en-US', {
           const s = stats(h);
           const isOpen = expanded.has(h.id);
           const color = COLORS[h.color] || COLORS.emerald;
+          // Expanded detail view drops the week strip (the month calendar below
+          // covers those days); the strip stays only on the collapsed cards.
+          const nameBtn = `
+            <button data-toggle="${h.id}" class="flex min-w-0 items-center gap-2 py-1.5 pr-2 text-left">
+              <span class="shrink-0 text-base">${h.emoji}</span>
+              <span class="truncate font-medium">${escapeHtml(h.name)}</span>
+              ${s.current > 0 ? `<span class="inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums" style="color:${color};background:${color}14" title="${s.current}-day streak">${FLAME}${s.current}</span>` : ''}
+              <svg class="ml-auto h-4 w-4 shrink-0 text-slate-300 transition ${isOpen ? 'rotate-180' : ''} dark:text-slate-600" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
+            </button>`;
           return `
           <article class="rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-black/5 transition dark:bg-slate-900 dark:ring-white/10">
-            <div class="${GRID}">
-              <button data-toggle="${h.id}" class="col-span-7 flex min-w-0 items-center gap-2 py-1.5 pr-2 text-left sm:col-span-1">
-                <span class="shrink-0 text-base">${h.emoji}</span>
-                <span class="truncate font-medium">${escapeHtml(h.name)}</span>
-                ${s.current > 0 ? `<span class="inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums" style="color:${color};background:${color}14" title="${s.current}-day streak">${FLAME}${s.current}</span>` : ''}
-                <svg class="ml-auto h-4 w-4 shrink-0 text-slate-300 transition ${isOpen ? 'rotate-180' : ''} dark:text-slate-600" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
-              </button>
-              ${weekCells(h)}
-            </div>
-            ${isOpen ? overviewPanel(h) : ''}
+            ${isOpen
+              ? nameBtn + overviewPanel(h)
+              : `<div class="${GRID}"><div class="col-span-7 cursor-pointer sm:col-span-1" data-toggle="${h.id}">${nameBtn}</div>${weekCells(h)}</div>`}
           </article>`;
         }).join('');
         renderTodayCard();
-        renderYearSelect();
-      }
-
-      // years present in the data, plus the current year, newest first
-      function renderYearSelect() {
-        const sel = document.getElementById('year-select');
-        const years = new Set([CURRENT_YEAR]);
-        for (const h of habits) for (const d of h.days) years.add(Number(d.slice(0, 4)));
-        const opts = [...years].sort((a, b) => b - a);
-        const sig = opts.join(',');
-        if (sel.dataset.sig !== sig) {
-          sel.innerHTML = opts.map((y) => `<option value="${y}">${y}</option>`).join('');
-          sel.dataset.sig = sig;
-        }
-        sel.value = String(activeYear);
       }
 
       function renderTodayCard() {
@@ -450,10 +444,6 @@ const today = new Date().toLocaleDateString('en-US', {
         document.getElementById('today-pct').textContent = pct + '%';
         const circ = 2 * Math.PI * 15.5;
         document.getElementById('today-progress').style.strokeDashoffset = String(circ * (1 - pct / 100));
-      }
-
-      function escapeHtml(s) {
-        return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
       }
 
       // ---- interactions ------------------------------------------------------
@@ -509,10 +499,7 @@ const today = new Date().toLocaleDateString('en-US', {
         if (del) {
           const id = Number(del.dataset.delete);
           const habit = habits.find((h) => h.id === id);
-          pendingDelete = id;
-          document.getElementById('confirm-text').textContent =
-            `This permanently deletes “${habit ? habit.name : 'this habit'}” and all its check-ins. This can't be undone.`;
-          showConfirm();
+          askConfirm(`This permanently deletes “${habit ? habit.name : 'this habit'}” and all its check-ins. This can't be undone.`, () => doDelete(id));
           return;
         }
       });
@@ -524,16 +511,18 @@ const today = new Date().toLocaleDateString('en-US', {
         await fetch('/api/habits/' + id, { method: 'DELETE', headers: authHeaders() });
       }
 
-      // ---- delete confirmation modal ----------------------------------------
+      // ---- reusable confirmation modal --------------------------------------
       const confirmModal = document.getElementById('confirm-modal');
+      let onConfirmYes = null;
       function showConfirm() { confirmModal.classList.remove('hidden'); confirmModal.classList.add('flex'); }
-      function hideConfirm() { confirmModal.classList.add('hidden'); confirmModal.classList.remove('flex'); pendingDelete = null; }
+      function hideConfirm() { confirmModal.classList.add('hidden'); confirmModal.classList.remove('flex'); onConfirmYes = null; }
+      function askConfirm(text, fn) { document.getElementById('confirm-text').textContent = text; onConfirmYes = fn; showConfirm(); }
       document.getElementById('confirm-cancel').addEventListener('click', hideConfirm);
       confirmModal.addEventListener('click', (e) => { if (e.target === confirmModal) hideConfirm(); });
       document.getElementById('confirm-delete').addEventListener('click', async () => {
-        const id = pendingDelete;
+        const fn = onConfirmYes;
         hideConfirm();
-        if (id != null) await doDelete(id);
+        if (fn) await fn();
       });
 
       // ---- add habit ---------------------------------------------------------
@@ -627,35 +616,96 @@ const today = new Date().toLocaleDateString('en-US', {
         if (!hidden) document.getElementById('habit-name').focus();
       });
 
-      // ---- year selector -----------------------------------------------------
-      document.getElementById('year-select').addEventListener('change', (e) => {
-        activeYear = Number(e.target.value);
-        calView.clear();          // calendars re-default into the chosen year
-        expanded.clear();         // collapse open panels so the change is clear
-        render();
-      });
-
       // ---- theme toggle ------------------------------------------------------
       document.getElementById('theme-toggle').addEventListener('click', () => {
         const dark = document.documentElement.classList.toggle('dark');
         localStorage.setItem('theme', dark ? 'dark' : 'light');
       });
 
-      // ---- passcode gate + data loading -------------------------------------
+      // ---- PWA install (service worker + in-app install button) -------------
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+      }
+      const installBtn = document.getElementById('install-btn');
+      let deferredPrompt = null;
+      // Chromium fires this when the app is installable; iOS Safari never does
+      // (there it's Share → Add to Home Screen), so the button stays hidden.
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        installBtn.classList.remove('hidden');
+        installBtn.classList.add('flex');
+      });
+      installBtn.addEventListener('click', async () => {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        installBtn.classList.add('hidden');
+        installBtn.classList.remove('flex');
+      });
+      window.addEventListener('appinstalled', () => {
+        installBtn.classList.add('hidden');
+        installBtn.classList.remove('flex');
+      });
+
+      // ---- profile gate + data loading --------------------------------------
       const gate = document.getElementById('gate');
-      const gateForm = document.getElementById('gate-form');
-      const gateInput = document.getElementById('gate-input');
-      const gateError = document.getElementById('gate-error');
+      const loginForm = document.getElementById('login-form');
+      const loginName = document.getElementById('login-profile-name');
+      const loginPass = document.getElementById('login-passcode');
+      const loginError = document.getElementById('login-error');
+      const pickerView = document.getElementById('picker-view');
+      const profileList = document.getElementById('profile-list');
+      const createForm = document.getElementById('create-form');
+      const createName = document.getElementById('create-name');
+      const createPass = document.getElementById('create-passcode');
+      const createError = document.getElementById('create-error');
       const loadError = document.getElementById('load-error');
 
-      function showGate() {
-        gate.classList.remove('hidden');
-        gate.classList.add('flex');
-        gateInput.focus();
+      let profiles = [];
+
+      function showGate() { gate.classList.remove('hidden'); gate.classList.add('flex'); }
+      function hideGate() { gate.classList.add('hidden'); gate.classList.remove('flex'); }
+      const manageView = document.getElementById('manage-view');
+      function showView(v) {
+        loginForm.classList.toggle('hidden', v !== 'login');
+        pickerView.classList.toggle('hidden', v !== 'picker');
+        createForm.classList.toggle('hidden', v !== 'create');
+        manageView.classList.toggle('hidden', v !== 'manage');
       }
-      function hideGate() {
-        gate.classList.add('hidden');
-        gate.classList.remove('flex');
+
+      async function loadProfiles() {
+        try { profiles = await (await fetch('/api/profiles', { cache: 'no-store' })).json(); }
+        catch { profiles = []; }
+      }
+
+      // Decide which gate view to show based on what profiles exist / is selected.
+      function openGate() {
+        showGate();
+        if (!profiles.length) { showView('create'); createName.focus(); return; }
+        if (!profile) profile = profiles[0]; // default to the first (owner)
+        loginName.textContent = profile.name;
+        loginError.classList.add('hidden');
+        loginPass.value = '';
+        showView('login');
+        loginPass.focus();
+      }
+
+      const TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>';
+      async function renderPicker() {
+        await loadProfiles(); // refresh in case a friend added one on another device
+        profileList.innerHTML = profiles.map((p) => {
+          const current = profile && p.id === profile.id;
+          const deletable = token && profile && (current || profile.admin);
+          return `<div class="flex items-center gap-2">
+              <button type="button" data-pick="${p.id}" class="h-11 flex-1 rounded-xl border border-slate-200 bg-white text-sm font-medium transition hover:border-emerald-400 dark:border-slate-700 dark:bg-slate-900 ${current ? 'ring-1 ring-emerald-400' : ''}">${escapeHtml(p.name)}</button>
+              ${deletable ? `<button type="button" data-del-profile="${p.id}" data-del-name="${escapeHtml(p.name)}" aria-label="Delete ${escapeHtml(p.name)}" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-950/40">${TRASH}</button>` : ''}
+            </div>`;
+        }).join('');
+        document.getElementById('manage-btn').classList.toggle('hidden', !token);
+        document.getElementById('picker-cancel').classList.toggle('hidden', !token);
+        showView('picker');
       }
 
       // Returns 'ok' | 'unauthorized' | 'error'
@@ -666,53 +716,231 @@ const today = new Date().toLocaleDateString('en-US', {
           if (!res.ok) return 'error';
           habits = await res.json();
           return 'ok';
-        } catch {
-          return 'error';
-        }
+        } catch { return 'error'; }
       }
 
-      // Keep the PWA fresh: iOS suspends the app and reopens to its frozen
-      // state, so re-pull whenever it becomes visible / is restored again.
+      function enterApp() {
+        hideGate();
+        loadError.classList.add('hidden');
+        // show the active profile in the header
+        if (profile) {
+          document.getElementById('profile-chip-name').textContent = profile.name;
+          document.getElementById('profile-chip').classList.remove('hidden');
+          document.getElementById('profile-chip').classList.add('flex');
+        }
+        render();
+        initRealtime();
+      }
+
       async function refresh() {
-        if (!passcode) return;
+        if (!token) return;
         const r = await fetchHabits();
         if (r === 'ok') { render(); loadError.classList.add('hidden'); }
-        else if (r === 'unauthorized') { passcode = ''; localStorage.removeItem(PC_KEY); showGate(); }
+        else if (r === 'unauthorized') { signOut(); }
       }
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') refresh();
       });
       window.addEventListener('pageshow', (e) => { if (e.persisted) refresh(); });
 
-      async function boot() {
-        if (!passcode) { showGate(); return; }
-        const r = await fetchHabits();
-        if (r === 'ok') { hideGate(); loadError.classList.add('hidden'); render(); }
-        else if (r === 'unauthorized') { passcode = ''; localStorage.removeItem(PC_KEY); showGate(); }
-        else { hideGate(); loadError.classList.remove('hidden'); }
+      function signOut() {
+        token = ''; localStorage.removeItem(TK);
+        openGate();
       }
 
-      gateForm.addEventListener('submit', async (e) => {
+      // ---- realtime: apply another device's change surgically ---------------
+      function applyRemote(p) {
+        if (!p || !p.type) return;
+        if (p.type === 'checkin') {
+          const h = habits.find((x) => x.id === p.habitId);
+          if (!h) return;
+          const has = h.days.includes(p.day);
+          if (p.checked && !has) h.days = [...h.days, p.day];
+          else if (!p.checked && has) h.days = h.days.filter((d) => d !== p.day);
+          else return;
+        } else if (p.type === 'add') {
+          if (p.habit && !habits.some((x) => x.id === p.habit.id)) habits.push(p.habit);
+          else return;
+        } else if (p.type === 'delete') {
+          if (!habits.some((x) => x.id === p.id)) return;
+          habits = habits.filter((x) => x.id !== p.id);
+          expanded.delete(p.id); calView.delete(p.id);
+        } else if (p.type === 'rename') {
+          const h = habits.find((x) => x.id === p.id);
+          if (!h || h.name === p.name) return;
+          h.name = p.name;
+        } else return;
+        render();
+      }
+
+      let realtimeStarted = false;
+      async function initRealtime() {
+        if (realtimeStarted || !profile) return;
+        realtimeStarted = true;
+        try {
+          const res = await fetch('/api/rt-config', { cache: 'no-store' });
+          if (!res.ok) return;
+          const cfg = await res.json();
+          if (!cfg.enabled) return;
+          const pusher = await connectRealtime({ key: cfg.key, cluster: cfg.cluster, channel: `habitrack-${profile.id}`, onEvent: applyRemote });
+          const setId = () => { socketId = pusher.connection.socket_id; };
+          pusher.connection.bind('connected', setId);
+          if (pusher.connection.socket_id) setId();
+        } catch { /* best-effort */ }
+      }
+
+      // ---- gate interactions ------------------------------------------------
+      document.getElementById('switch-profile').addEventListener('click', renderPicker);
+      document.getElementById('profile-chip').addEventListener('click', () => { showGate(); renderPicker(); });
+      document.getElementById('picker-cancel').addEventListener('click', () => { if (token) hideGate(); });
+      document.getElementById('new-profile-btn').addEventListener('click', () => {
+        createName.value = ''; createPass.value = ''; createError.classList.add('hidden');
+        showView('create'); createName.focus();
+      });
+      document.getElementById('create-back').addEventListener('click', () => {
+        profiles.length ? openGate() : renderPicker();
+      });
+      profileList.addEventListener('click', (e) => {
+        const trash = e.target.closest('[data-del-profile]');
+        if (trash) {
+          const id = Number(trash.dataset.delProfile);
+          const name = trash.dataset.delName;
+          askConfirm(`Delete profile “${name}” and all its habits? This can't be undone.`, () => deleteProfileById(id));
+          return;
+        }
+        const b = e.target.closest('[data-pick]');
+        if (!b) return;
+        profile = profiles.find((p) => p.id === Number(b.dataset.pick));
+        openGate();
+      });
+
+      // Delete a profile (self → sign out & reload; someone else as admin → refresh list).
+      async function deleteProfileById(id) {
+        try {
+          const res = await fetch('/api/profiles/' + id, { method: 'DELETE', headers: authHeaders() });
+          if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Could not delete profile.'); return; }
+          if (profile && id === profile.id) {
+            token = ''; profile = null;
+            localStorage.removeItem(TK); localStorage.removeItem(PID);
+            location.reload();
+          } else {
+            renderPicker();
+          }
+        } catch { alert('Could not delete profile.'); }
+      }
+
+      // ---- manage profile (rename / change passcode / delete self) ----------
+      const manageMsg = document.getElementById('manage-msg');
+      function showManageMsg(text, ok) {
+        manageMsg.textContent = text;
+        manageMsg.className = `mt-2 text-xs font-medium ${ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'}`;
+        manageMsg.classList.remove('hidden');
+      }
+      document.getElementById('manage-btn').addEventListener('click', () => {
+        document.getElementById('manage-name').textContent = profile.name;
+        document.getElementById('manage-rename').value = profile.name;
+        document.getElementById('manage-cur-pass').value = '';
+        document.getElementById('manage-new-pass').value = '';
+        manageMsg.classList.add('hidden');
+        showView('manage');
+      });
+      document.getElementById('manage-back').addEventListener('click', renderPicker);
+      document.getElementById('manage-rename-save').addEventListener('click', async () => {
+        const name = document.getElementById('manage-rename').value.trim();
+        if (!name) return;
+        try {
+          const res = await fetch('/api/profiles/' + profile.id, {
+            method: 'PATCH', headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ name }),
+          });
+          if (!res.ok) { const d = await res.json().catch(() => ({})); showManageMsg(d.error || 'Rename failed.', false); return; }
+          profile.name = name;
+          localStorage.setItem(PID, JSON.stringify(profile));
+          document.getElementById('profile-chip-name').textContent = name;
+          document.getElementById('manage-name').textContent = name;
+          showManageMsg('Name updated.', true);
+        } catch { showManageMsg('Rename failed.', false); }
+      });
+      document.getElementById('manage-pass-save').addEventListener('click', async () => {
+        const currentPasscode = document.getElementById('manage-cur-pass').value;
+        const newPasscode = document.getElementById('manage-new-pass').value;
+        if (newPasscode.length < 4) { showManageMsg('New passcode must be at least 4 characters.', false); return; }
+        try {
+          const res = await fetch('/api/profiles/' + profile.id, {
+            method: 'PATCH', headers: authHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ currentPasscode, newPasscode }),
+          });
+          if (!res.ok) { const d = await res.json().catch(() => ({})); showManageMsg(d.error || 'Could not change passcode.', false); return; }
+          document.getElementById('manage-cur-pass').value = '';
+          document.getElementById('manage-new-pass').value = '';
+          showManageMsg('Passcode changed.', true);
+        } catch { showManageMsg('Could not change passcode.', false); }
+      });
+      document.getElementById('manage-delete').addEventListener('click', () => {
+        askConfirm(`Delete your profile “${profile.name}” and all its habits? This can't be undone.`, () => deleteProfileById(profile.id));
+      });
+
+      loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const val = gateInput.value.trim();
-        if (!val) return;
-        passcode = val;
-        gateError.classList.add('hidden');
-        const r = await fetchHabits();
-        if (r === 'ok') {
-          localStorage.setItem(PC_KEY, passcode); // remembered — no re-entry
-          hideGate();
-          loadError.classList.add('hidden');
-          render();
-        } else if (r === 'unauthorized') {
-          passcode = '';
-          gateError.classList.remove('hidden');
-          gateInput.select();
-        } else {
-          gateError.textContent = 'Something went wrong — try again.';
-          gateError.classList.remove('hidden');
+        const passcode = loginPass.value;
+        if (!passcode) return;
+        loginError.classList.add('hidden');
+        try {
+          const res = await fetch('/api/login', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profileId: profile.id, passcode }),
+          });
+          if (res.status === 401) { loginError.classList.remove('hidden'); loginPass.select(); return; }
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          token = data.token; profile = { id: data.id, name: data.name, admin: !!data.admin };
+          localStorage.setItem(TK, token);
+          localStorage.setItem(PID, JSON.stringify(profile));
+          if (realtimeStarted) { location.reload(); return; } // switching — rebind cleanly
+          const r = await fetchHabits();
+          if (r === 'ok') enterApp();
+        } catch {
+          loginError.textContent = 'Something went wrong — try again.';
+          loginError.classList.remove('hidden');
         }
       });
+
+      createForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = createName.value.trim();
+        const passcode = createPass.value;
+        createError.classList.add('hidden');
+        if (!name) { createError.textContent = 'Name is required.'; createError.classList.remove('hidden'); return; }
+        if (passcode.length < 4) { createError.textContent = 'Passcode must be at least 4 characters.'; createError.classList.remove('hidden'); return; }
+        try {
+          const res = await fetch('/api/profiles', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, passcode }),
+          });
+          if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || ''); }
+          const data = await res.json();
+          token = data.token; profile = { id: data.id, name: data.name, admin: !!data.admin };
+          localStorage.setItem(TK, token);
+          localStorage.setItem(PID, JSON.stringify(profile));
+          if (realtimeStarted) { location.reload(); return; } // switching — rebind cleanly
+          const r = await fetchHabits();
+          if (r === 'ok') enterApp();
+        } catch (err) {
+          createError.textContent = err.message || 'Could not create profile.';
+          createError.classList.remove('hidden');
+        }
+      });
+
+      async function boot() {
+        await loadProfiles();
+        if (token && profile) {
+          const r = await fetchHabits();
+          if (r === 'ok') { enterApp(); return; }
+          if (r === 'unauthorized') { token = ''; localStorage.removeItem(TK); }
+          else { hideGate(); loadError.classList.remove('hidden'); return; }
+        }
+        openGate();
+      }
 
       boot();
     </script>
