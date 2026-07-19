@@ -44,8 +44,41 @@ export function activeFromOf(habit) {
   return (first && created) ? (first < created ? first : created) : (first || created);
 }
 
+// A 'streak' (quit/abstain) habit: every day is clean by default from its start
+// date; habit.days holds SLIP days (the inverse of a normal habit's check-ins).
+export const isStreak = (h) => h.kind === 'streak';
+
+// The day a habit's tracking/streak begins: explicit start_date, else created day.
+export function startOf(habit) {
+  const sd = (habit.start_date || '').slice(0, 10);
+  if (sd) return sd;
+  const created = (habit.created_at || '').slice(0, 10);
+  return created || TODAY;
+}
+
+// Clean-streak stats for a 'streak' habit. days = slip days; every other day in
+// [start, today] is clean. current = clean days up to today (0 if today is a
+// slip); longest = longest clean run; total = total clean days; slips = count.
+export function streakStats(habit) {
+  const slips = new Set(habit.days);
+  const start = startOf(habit);
+  let current = 0;
+  for (let d = TODAY; d >= start; d = addDays(d, -1)) {
+    if (slips.has(d)) break;
+    current++;
+  }
+  let longest = 0, run = 0, total = 0, slipCount = 0;
+  for (let d = start; d <= TODAY; d = addDays(d, 1)) {
+    total++;
+    if (slips.has(d)) { slipCount++; run = 0; }
+    else { run++; if (run > longest) longest = run; }
+  }
+  return { current, longest, total: total - slipCount, slips: slipCount };
+}
+
 // ---- stats (only scheduled days count; streaks skip rest days) -----------
 export function stats(habit) {
+  if (isStreak(habit)) return streakStats(habit);
   const set = new Set(habit.days);
   const sched = schedOf(habit);
   const due = (d) => sched.has(dow(d));
@@ -143,6 +176,33 @@ export function githubGraph(habit) {
       <span>Done</span>
     </div>`;
   return `<div>${heatmapBlock({ earliest, dayInfo, legend, countText: `${count} check-in${count === 1 ? '' : 's'} in the last year` })}</div>`;
+}
+
+// streak-habit heatmap: clean (habit color) vs slip (red), from the start date.
+export const SLIP_COLOR = '#ef4444';
+export function streakGraph(habit) {
+  const slips = new Set(habit.days);
+  const color = COLORS[habit.color] || COLORS.emerald;
+  const start = startOf(habit);
+  // Always span the full year window so the grid keeps ~52 columns (a short
+  // range would blow each cell up to full width). Days before the streak began
+  // render as a faint "not tracked" tile.
+  const earliest = windowStart();
+  let total = 0, slip = 0;
+  for (let d = start > earliest ? start : earliest; d <= TODAY; d = addDays(d, 1)) { total++; if (slips.has(d)) slip++; }
+  const clean = total - slip;
+  const dayInfo = (ds) => {
+    if (ds < start) return { cls: 'bg-slate-100/70 dark:bg-slate-800/40', title: ds + ' · before start' };
+    if (slips.has(ds)) return { style: `background:${SLIP_COLOR}`, title: ds + ' · slipped' };
+    return { style: `background:${color}`, title: ds + ' · clean' };
+  };
+  const legend = `<div class="mt-2 flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+      <span class="h-[10px] w-[10px] rounded-[2px]" style="background:${color}"></span>
+      <span>Clean</span>
+      <span class="ml-1.5 h-[10px] w-[10px] rounded-[2px]" style="background:${SLIP_COLOR}"></span>
+      <span>Slip</span>
+    </div>`;
+  return `<div>${heatmapBlock({ earliest, dayInfo, legend, countText: `${clean} clean day${clean === 1 ? '' : 's'} in the last year` })}</div>`;
 }
 
 export function escapeHtml(s) {

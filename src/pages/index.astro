@@ -104,6 +104,13 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         Couldn't reach the server. Check your connection and reload.
       </div>
 
+      <!-- Kind switcher: normal habits vs streak (quit/abstain) trackers. The
+           active tab also decides what the + button creates. -->
+      <div id="kind-tabs" class="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm font-semibold dark:bg-slate-800/60">
+        <button type="button" data-tab="normal" class="rounded-lg py-2 transition">Habits</button>
+        <button type="button" data-tab="streak" class="rounded-lg py-2 transition">Streaks</button>
+      </div>
+
       <!-- Today progress -->
       <section id="today-card" class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div class="flex items-center justify-between">
@@ -122,7 +129,16 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
       </section>
 
       <!-- Add habit (toggled by the + in the header) -->
-      <form id="habit-form" class="mb-6 hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <form id="habit-form" class="relative mb-6 hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <button type="button" id="habit-close" aria-label="Close" title="Close"
+          class="absolute right-2.5 top-2.5 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+        </button>
+
+        <!-- Kind is decided by the active tab (Habits → build, Streaks → quit);
+             the form heading reflects it. -->
+        <p id="form-heading" class="mb-3 mr-10 text-sm font-semibold"></p>
+
         <div class="flex items-start gap-2">
           <!-- Leading emoji tile (fixed-width rail); the pencil badge lives over it -->
           <div class="relative shrink-0">
@@ -147,15 +163,18 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
             <p class="mb-1.5 mt-5 text-xs font-medium text-slate-500 dark:text-slate-400">Color</p>
             <div id="color-picker" class="flex flex-wrap gap-2"></div>
 
-            <p class="mb-1.5 mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">How often?</p>
-            <div class="flex items-center justify-between gap-2">
-              <div id="freq-seg" class="flex gap-1.5"></div>
-              <button type="button" id="habit-close" aria-label="Close" title="Close"
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200">
-                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-              </button>
+            <div id="freq-section">
+              <p class="mb-1.5 mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">How often?</p>
+              <div id="freq-seg" class="flex flex-wrap gap-1.5"></div>
+              <div id="freq-days" class="mt-2 hidden flex-wrap gap-1.5"></div>
             </div>
-            <div id="freq-days" class="mt-2 hidden flex-wrap gap-1.5"></div>
+
+            <div id="start-row" class="mt-4">
+              <p id="start-label" class="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">Existing streak?</p>
+              <div id="start-seg" class="flex flex-wrap gap-1.5"></div>
+              <input type="date" id="start-custom" aria-label="Start date"
+                class="mt-2 hidden h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-800" />
+            </div>
           </div>
         </div>
       </form>
@@ -182,7 +201,7 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
     <script id="initial-profile" type="application/json" is:inline set:html={profileJson}></script>
 
     <script>
-      import { COLORS, COLORS_DARK, MONTHS, WD, TODAY, BACKFILL_DAYS, iso, pad2, addDays, dow, schedOf, stats, windowStart, heatmapBlock, githubGraph, escapeHtml, connectRealtime, apiFetch } from '../lib/compute.js';
+      import { COLORS, COLORS_DARK, MONTHS, WD, TODAY, BACKFILL_DAYS, iso, pad2, addDays, dow, schedOf, stats, windowStart, heatmapBlock, githubGraph, streakGraph, isStreak, startOf, escapeHtml, connectRealtime, apiFetch } from '../lib/compute.js';
 
       // Earliest day a check-in can still be marked (today − (BACKFILL_DAYS−1)).
       const BACKFILL_START = addDays(TODAY, -(BACKFILL_DAYS - 1));
@@ -207,6 +226,13 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
 
       let habits = [];
       const expanded = new Set();
+
+      // Which kind of tracker the main list shows: 'normal' habits or 'streak'
+      // (quit/abstain) trackers. Persisted so the tab sticks across reloads.
+      const KIND_TAB = 'habitrack_tab';
+      let activeTab = 'normal';
+      try { const t = localStorage.getItem(KIND_TAB); if (t === 'streak' || t === 'normal') activeTab = t; } catch {}
+      function setTab(t) { activeTab = t; try { localStorage.setItem(KIND_TAB, t); } catch {} }
 
       // ---- auth: signed token + selected profile (both in localStorage) ------
       const TK = 'habitrack_token';
@@ -262,7 +288,34 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
       }
 
       const REST = '<span class="h-1 w-1 rounded-full bg-slate-200 dark:bg-slate-700"></span>';
+      // Streak 7-day strip: every day is clean (✓, color) by default from the
+      // start date; slips (habit.days) show a red ✕. Tapping toggles a slip — so
+      // you can mark "I slipped yesterday" if you forgot to open the app today.
+      function weekCellsStreak(habit) {
+        const slips = new Set(habit.days);
+        const color = COLORS[habit.color] || COLORS.emerald;
+        const start = startOf(habit);
+        return last7().map((d) => {
+          const isToday = d === TODAY;
+          const todayBg = isToday ? 'rounded-lg bg-slate-50/70 dark:bg-slate-800/40' : '';
+          if (d < start) {
+            // before the streak began — not tracked
+            return `<div class="flex h-9 items-center justify-center opacity-70" title="${d} · before start">${REST}</div>`;
+          }
+          const slip = slips.has(d);
+          const editable = !viewing && d >= BACKFILL_START;
+          const marker = slip
+            ? `<span class="text-rose-500 dark:text-rose-400">${CROSS}</span>`
+            : `<span style="color:${color}">${CHECK}</span>`;
+          const title = `${d}${slip ? ' · slipped' : ' · clean'}`;
+          if (!editable) return `<div class="flex h-9 items-center justify-center ${todayBg}" title="${title}">${marker}</div>`;
+          return `<button data-day="${d}" data-habit="${habit.id}"
+              class="day flex h-9 touch-manipulation items-center justify-center rounded-lg transition hover:bg-slate-50 active:scale-90 dark:hover:bg-slate-800/60 ${todayBg}"
+              title="${title}">${marker}</button>`;
+        }).join('');
+      }
       function weekCells(habit) {
+        if (isStreak(habit)) return weekCellsStreak(habit);
         const set = new Set(habit.days);
         const sched = schedOf(habit);
         const color = COLORS[habit.color] || COLORS.emerald;
@@ -285,7 +338,7 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
             return `<div class="flex h-9 items-center justify-center ${todayBg}" title="${d}${done ? ' · done' : ''}">${marker}</div>`;
           }
           return `<button data-day="${d}" data-habit="${habit.id}"
-              class="day flex h-9 items-center justify-center rounded-lg transition hover:bg-slate-50 active:scale-90 dark:hover:bg-slate-800/60 ${todayBg}"
+              class="day flex h-9 touch-manipulation items-center justify-center rounded-lg transition hover:bg-slate-50 active:scale-90 dark:hover:bg-slate-800/60 ${todayBg}"
               title="${d}${done ? ' · done' : ''}">${marker}</button>`;
         }).join('');
       }
@@ -313,11 +366,18 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         const firstDow = (new Date(y, m, 1).getDay() + 6) % 7; // Mon=0
         const daysInMonth = new Date(y, m + 1, 0).getDate();
 
-        // habit's active-from date = earlier of created date / first check-in.
-        // Nothing before this can be "missed" — the habit didn't exist yet.
+        // Streak habits: every day is clean from the start date; habit.days = slips.
+        const streak = isStreak(habit);
+        const SLIP = '#ef4444';
+
+        // habit's active-from date. For a streak it's the start date; for a normal
+        // habit it's the earlier of created date / first check-in. Nothing before
+        // this can be "missed" — the habit didn't exist / streak hadn't begun.
         const firstCheckin = habit.days.length ? habit.days.reduce((a, b) => (a < b ? a : b)) : null;
         const created = (habit.created_at || '').slice(0, 10) || null;
-        const activeFrom = (firstCheckin && created) ? (firstCheckin < created ? firstCheckin : created) : (firstCheckin || created);
+        const activeFrom = streak
+          ? startOf(habit)
+          : ((firstCheckin && created) ? (firstCheckin < created ? firstCheckin : created) : (firstCheckin || created));
 
         // Weekday headers: medium/secondary gray structural labels.
         const wdRow = WD.map((w) => `<div class="text-center text-[11px] font-medium text-slate-500 dark:text-slate-400">${w}</div>`).join('');
@@ -341,7 +401,7 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         const ro = !!viewing;
         const editableDay = (ds) => !ro && ds >= BACKFILL_START && ds <= TODAY;
         const cellOpen = (ds, title) => editableDay(ds)
-          ? `<button data-day="${ds}" data-habit="${habit.id}" class="day relative aspect-square transition active:opacity-70" title="${title}">`
+          ? `<button data-day="${ds}" data-habit="${habit.id}" class="day relative aspect-square touch-manipulation transition active:opacity-70" title="${title}">`
           : `<div class="relative aspect-square" title="${title}">`;
         const cellClose = (ds) => editableDay(ds) ? '</button>' : '</div>';
 
@@ -354,6 +414,26 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
           const scheduled = sched.has(new Date(y, m, d).getDay());
           const done = set.has(ds);
           const isToday = ds === TODAY;
+
+          // Streak: clean days (color) connect into one capsule; slips are red.
+          if (streak) {
+            const slip = set.has(ds);
+            const isClean = (x) => x >= activeFrom && x <= TODAY && !set.has(x);
+            if (!future && !beforeActive && !slip) {
+              const leftSq = isClean(addDays(ds, -1));
+              const rightSq = isClean(addDays(ds, 1));
+              const full = leftSq || rightSq;
+              const br = `${leftSq ? 0 : R}px ${rightSq ? 0 : R}px ${rightSq ? 0 : R}px ${leftSq ? 0 : R}px`;
+              const fill = `<span class="${CTR}" style="width:${full ? '100%' : '80%'};height:${HGT};background:${color};border-radius:${br}"></span>`;
+              cells += `${cellOpen(ds, ds + ' · clean')}${fill}<span class="${NUM} font-medium text-white">${d}</span>${cellClose(ds)}`;
+            } else if (slip) {
+              const fill = `<span class="${CTR}" style="width:80%;height:${HGT};background:${SLIP};border-radius:10px"></span>`;
+              cells += `${cellOpen(ds, ds + ' · slipped')}${fill}<span class="${NUM} font-medium text-white">${d}</span>${cellClose(ds)}`;
+            } else {
+              cells += `<div class="relative flex aspect-square items-center justify-center text-sm font-normal tabular-nums text-slate-500 dark:text-slate-400">${d}</div>`;
+            }
+            continue;
+          }
 
           if (done) {
             // square the side that abuts another done day; full-width when linked
@@ -383,7 +463,12 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="${dir === 'prev' ? 'M15.75 19.5 8.25 12l7.5-7.5' : 'm8.25 4.5 7.5 7.5-7.5 7.5'}"/></svg>
           </button>`;
 
-        const legend = `<div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500 dark:text-slate-400">
+        const legend = streak
+          ? `<div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500 dark:text-slate-400">
+              <span class="flex items-center gap-1.5"><span class="inline-block h-3 w-6 rounded-full" style="background:${color}"></span>Clean</span>
+              <span class="flex items-center gap-1.5"><span class="inline-block h-3.5 w-3.5 rounded" style="background:${SLIP}"></span>Slip</span>
+            </div>`
+          : `<div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500 dark:text-slate-400">
             <span class="flex items-center gap-1.5"><span class="inline-block h-3 w-6 rounded-full" style="background:${color}"></span>Streak</span>
             <span class="flex items-center gap-1.5"><span class="inline-block h-3.5 w-3.5 rounded" style="background:${tint}"></span>Missed</span>
             <span class="flex items-center gap-1.5"><span class="inline-block h-3.5 w-3.5 rounded" style="box-shadow:inset 0 0 0 1.5px ${color}"></span>Today</span>
@@ -405,10 +490,16 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
           </div>`;
       }
 
-      // up/down mover; disabled at the list ends (idx computed from live order)
+      // Habits of the same kind as `id`, in live order (reorder stays within a tab).
+      function sameKindList(id) {
+        const h0 = habits.find((h) => h.id === id);
+        return h0 ? habits.filter((h) => isStreak(h) === isStreak(h0)) : [];
+      }
+      // up/down mover; disabled at the list ends (idx among same-kind siblings)
       function reorderBtn(dir, id) {
-        const idx = habits.findIndex((h) => h.id === id);
-        const disabled = dir === 'up' ? idx <= 0 : idx >= habits.length - 1;
+        const sib = sameKindList(id);
+        const idx = sib.findIndex((h) => h.id === id);
+        const disabled = dir === 'up' ? idx <= 0 : idx >= sib.length - 1;
         // full arrows (with stem) read as "move", distinct from the collapse chevron
         const path = dir === 'up' ? 'M12 19.5V4.5m0 0L6.75 9.75M12 4.5l5.25 5.25' : 'M12 4.5v15m0 0 5.25-5.25M12 19.5 6.75 14.25';
         return `<button ${disabled ? 'disabled' : `data-move="${dir}" data-habit-move="${id}"`} aria-label="Move ${dir}"
@@ -426,16 +517,18 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
             <div class="text-[11px] font-medium text-slate-500 dark:text-slate-400">${label}</div>
           </div>`;
 
+        const streak = isStreak(habit);
+        const statCells = streak
+          ? cell('Streak', s.current) + cell('Best', s.longest) + cell('Clean', s.total) + cell('Slips', s.slips)
+          : cell('Streak', s.current) + cell('Best', s.longest) + cell('Total', s.total) + cell('30-day', s.rate30 + '%');
+
         return `
           <div class="mt-5 border-t border-slate-100 pt-5 dark:border-slate-800">
             ${calendarGrid(habit)}
             <div class="mt-6 grid grid-cols-4 gap-2">
-              ${cell('Streak', s.current)}
-              ${cell('Best', s.longest)}
-              ${cell('Total', s.total)}
-              ${cell('30-day', s.rate30 + '%')}
+              ${statCells}
             </div>
-            <div class="mt-5">${githubGraph(habit)}</div>
+            <div class="mt-5">${streak ? streakGraph(habit) : githubGraph(habit)}</div>
             ${viewing ? '' : `<div class="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 dark:border-slate-800">
               <div class="flex items-center gap-1">
                 <span class="mr-0.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">Reorder</span>
@@ -450,45 +543,70 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
           </div>`;
       }
 
+      // ---- normal habit card (week strip / calendar) -------------------------
+      function normalCard(h) {
+        const s = stats(h);
+        const isOpen = expanded.has(h.id);
+        const color = COLORS[h.color] || COLORS.emerald;
+        // Expanded detail view drops the week strip (the month calendar below
+        // covers those days); the strip stays only on the collapsed cards.
+        const nameBtn = `
+          <button data-toggle="${h.id}" class="flex w-full min-w-0 items-center gap-2 py-1.5 pr-2 text-left">
+            <span class="shrink-0 text-base">${escapeHtml(h.emoji)}</span>
+            <span class="truncate font-medium">${escapeHtml(h.name)}</span>
+            ${s.current > 0 ? `<span class="inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums" style="color:${color};background:${color}14" title="${s.current}-day ${isStreak(h) ? 'clean streak' : 'streak'}">${FLAME}${s.current}</span>` : ''}
+            <svg class="ml-auto h-4 w-4 shrink-0 text-slate-300 transition ${isOpen ? 'rotate-180' : ''} dark:text-slate-600" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
+          </button>`;
+        return `
+        <article class="rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-black/5 transition dark:bg-slate-900 dark:ring-white/10">
+          ${isOpen
+            ? nameBtn + overviewPanel(h)
+            : `<div class="${GRID}"><div class="col-span-7 cursor-pointer sm:col-span-1" data-toggle="${h.id}">${nameBtn}</div>${weekCells(h)}</div>`}
+        </article>`;
+      }
+
+      const kindTabs = document.getElementById('kind-tabs');
+      function renderTabs() {
+        [...kindTabs.children].forEach((b) => {
+          const on = b.dataset.tab === activeTab;
+          b.className = `rounded-lg py-2 transition ${on
+            ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`;
+        });
+      }
+
       function render() {
-        const has = habits.length > 0;
+        renderTabs();
+        const streakTab = activeTab === 'streak';
+        const shown = habits.filter((h) => isStreak(h) === streakTab);
+        const has = shown.length > 0;
+
+        // Today-card (completion ring) is normal-only; the week strip + its header
+        // appear on both tabs (streak cards use the same 7-day strip).
+        document.getElementById('today-card').classList.toggle('hidden', streakTab);
+        weekHead.classList.toggle('hidden', !has);
+
         document.getElementById('empty-state').classList.toggle('hidden', has);
         if (!has) {
-          // Viewers can't add — show a neutral message instead of the add button.
           document.getElementById('empty-add-btn').classList.toggle('hidden', !!viewing);
-          document.getElementById('empty-title').textContent = viewing ? 'No habits yet' : 'Start your first habit';
+          document.getElementById('empty-title').textContent = viewing
+            ? 'Nothing here yet'
+            : (streakTab ? 'Track a quit streak' : 'Start your first habit');
           document.getElementById('empty-sub').textContent = viewing
-            ? `${viewing.name} hasn’t added any habits yet.`
-            : 'Track something you want to do regularly — check it off with one tap a day.';
+            ? `${viewing.name} hasn’t added any ${streakTab ? 'streaks' : 'habits'} yet.`
+            : (streakTab
+                ? 'Quitting something? Track your clean streak — it counts up on its own every day, unless you mark a slip.'
+                : 'Track something you want to do regularly — check it off with one tap a day.');
         }
-        weekHead.classList.toggle('hidden', !has);
+
         weekHeader();
-        list.innerHTML = habits.map((h) => {
-          const s = stats(h);
-          const isOpen = expanded.has(h.id);
-          const color = COLORS[h.color] || COLORS.emerald;
-          // Expanded detail view drops the week strip (the month calendar below
-          // covers those days); the strip stays only on the collapsed cards.
-          const nameBtn = `
-            <button data-toggle="${h.id}" class="flex w-full min-w-0 items-center gap-2 py-1.5 pr-2 text-left">
-              <span class="shrink-0 text-base">${escapeHtml(h.emoji)}</span>
-              <span class="truncate font-medium">${escapeHtml(h.name)}</span>
-              ${s.current > 0 ? `<span class="inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums" style="color:${color};background:${color}14" title="${s.current}-day streak">${FLAME}${s.current}</span>` : ''}
-              <svg class="ml-auto h-4 w-4 shrink-0 text-slate-300 transition ${isOpen ? 'rotate-180' : ''} dark:text-slate-600" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
-            </button>`;
-          return `
-          <article class="rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-black/5 transition dark:bg-slate-900 dark:ring-white/10">
-            ${isOpen
-              ? nameBtn + overviewPanel(h)
-              : `<div class="${GRID}"><div class="col-span-7 cursor-pointer sm:col-span-1" data-toggle="${h.id}">${nameBtn}</div>${weekCells(h)}</div>`}
-          </article>`;
-        }).join('');
+        list.innerHTML = shown.map(normalCard).join('');
         renderTodayCard();
       }
 
       function renderTodayCard() {
         const todayDow = dow(TODAY);
-        const due = habits.filter((h) => schedOf(h).has(todayDow));
+        const due = habits.filter((h) => !isStreak(h) && schedOf(h).has(todayDow));
         const total = due.length;
         let done = 0;
         for (const h of due) if (h.days.includes(TODAY)) done++;
@@ -566,12 +684,15 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         }
       });
 
-      // ---- reorder -----------------------------------------------------------
+      // ---- reorder (within the same kind; sort_order is one global space) -----
       function moveHabit(id, dir) {
-        const i = habits.findIndex((h) => h.id === id);
-        const j = dir === 'up' ? i - 1 : i + 1;
-        if (i < 0 || j < 0 || j >= habits.length) return;
-        [habits[i], habits[j]] = [habits[j], habits[i]];
+        const sib = sameKindList(id);
+        const si = sib.findIndex((h) => h.id === id);
+        const sj = dir === 'up' ? si - 1 : si + 1;
+        if (si < 0 || sj < 0 || sj >= sib.length) return;
+        const a = habits.indexOf(sib[si]);
+        const b = habits.indexOf(sib[sj]);
+        [habits[a], habits[b]] = [habits[b], habits[a]];
         render();
         api('/api/habits/reorder', { method: 'POST', body: { ids: habits.map((h) => h.id) } });
       }
@@ -693,9 +814,17 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
 
       // ---- add / edit habit (one form, two modes) ----------------------------
       let editingId = null;                       // null = create mode
+      let formKind = 'normal';                    // 'normal' | 'streak' (create only)
+      let startSel = null;                        // null | offset days (neg) | 'custom'
       const habitForm = document.getElementById('habit-form');
       const habitNameInput = document.getElementById('habit-name');
       const habitSubmit = document.getElementById('habit-submit');
+      const formHeading = document.getElementById('form-heading');
+      const freqSection = document.getElementById('freq-section');
+      const startRow = document.getElementById('start-row');
+      const startSeg = document.getElementById('start-seg');
+      const startCustom = document.getElementById('start-custom');
+      const startLabel = document.getElementById('start-label');
 
       // Reflect a habit's schedule back into the frequency selector.
       function setFreqFromHabit(h) {
@@ -705,11 +834,56 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         else { freqMode = 'custom'; customDays = new Set(key.split(',').map(Number)); }
         renderFreq();
       }
+
+      // Backdated-start presets. First chip means "no backdate": for a normal habit
+      // that's "None" (no existing streak); for a streak it's "Today" (clean from now).
+      function renderStartSeg() {
+        startLabel.textContent = formKind === 'streak' ? 'Clean since' : 'Existing streak?';
+        const presets = [[null, formKind === 'streak' ? 'Today' : 'None'], [-7, '1 week'], [-14, '2 weeks'], [-30, '1 month'], ['custom', 'Custom']];
+        startSeg.innerHTML = presets.map(([v, l]) => `
+          <button type="button" data-start="${v}" class="rounded-lg px-3 py-1.5 text-xs font-semibold transition ${String(startSel) === String(v)
+            ? 'bg-emerald-500 text-white shadow-sm'
+            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}">${l}</button>`).join('');
+        startCustom.classList.toggle('hidden', startSel !== 'custom');
+      }
+      startSeg.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-start]');
+        if (!b) return;
+        const v = b.dataset.start;
+        startSel = v === 'null' ? null : (v === 'custom' ? 'custom' : Number(v));
+        renderStartSeg();
+      });
+      // Resolve the chosen start into a YYYY-MM-DD (or null = no backdate).
+      function computeStartDate() {
+        if (startSel === 'custom') {
+          const v = startCustom.value;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(v) && v <= TODAY) return v;
+          return formKind === 'streak' ? TODAY : null;
+        }
+        if (startSel === null) return formKind === 'streak' ? TODAY : null;
+        return addDays(TODAY, startSel);            // negative offset → a past date
+      }
+
+      // The create form's kind follows the active tab (no in-form toggle). Streaks
+      // are daily (no frequency picker) and use a "Clean since" backdate.
+      function setFormKind(kind) {
+        formKind = kind;
+        formHeading.textContent = kind === 'streak' ? 'Quit something' : 'Build a habit';
+        freqSection.classList.toggle('hidden', kind === 'streak');
+        startSel = null;
+        renderStartSeg();
+      }
+
       function resetFormToCreate() {
         editingId = null;
         habitNameInput.value = '';
         emojiInput.value = '✅';
         habitSubmit.textContent = 'Add';
+        formHeading.classList.remove('hidden');
+        startRow.classList.remove('hidden');
+        setColor('emerald');
+        freqMode = 'daily'; customDays = new Set([1, 2, 3, 4, 5]); renderFreq();
+        setFormKind(activeTab === 'streak' ? 'streak' : 'normal');   // the open tab decides
       }
       function enterEditMode(h) {
         editingId = h.id;
@@ -718,6 +892,10 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         setColor(COLORS[h.color] ? h.color : 'emerald');
         setFreqFromHabit(h);
         habitSubmit.textContent = 'Save';
+        // Kind + start are set at creation; editing tweaks name/emoji/color/schedule.
+        formHeading.textContent = isStreak(h) ? 'Edit streak' : 'Edit habit';
+        startRow.classList.add('hidden');
+        freqSection.classList.toggle('hidden', isStreak(h));
         habitForm.classList.remove('hidden');
         habitForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
         habitNameInput.focus();
@@ -738,14 +916,28 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
             render();
           }
         } else {
+          body.kind = formKind;
+          const sd = computeStartDate();
+          if (sd) body.startDate = sd;
           const { ok, data } = await api('/api/habits', { method: 'POST', body });
           if (ok) {
             habits.push(data);
+            // Jump to the tab the new tracker lives in so it's visible.
+            if (isStreak(data) !== (activeTab === 'streak')) setTab(isStreak(data) ? 'streak' : 'normal');
             resetFormToCreate();
             habitForm.classList.add('hidden');
             render();
           }
         }
+      });
+
+      // Main tab switcher (Habits / Streaks).
+      kindTabs.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-tab]');
+        if (!b || b.dataset.tab === activeTab) return;
+        setTab(b.dataset.tab);
+        if (!habitForm.classList.contains('hidden')) { resetFormToCreate(); habitForm.classList.add('hidden'); }
+        render();
       });
       document.getElementById('habit-close').addEventListener('click', () => { resetFormToCreate(); habitForm.classList.add('hidden'); });
 

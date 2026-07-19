@@ -74,6 +74,17 @@ await sql`ALTER TABLE profile_shares ADD COLUMN IF NOT EXISTS accepted_at TIMEST
 // Frequency: CSV of JS weekday numbers (0=Sun … 6=Sat) the habit is scheduled on.
 await sql`ALTER TABLE habits ADD COLUMN IF NOT EXISTS schedule TEXT NOT NULL DEFAULT '0,1,2,3,4,5,6'`;
 
+// Habit kind:
+//   'normal' — build a habit: default not-done, you check off each scheduled day.
+//   'streak' — quit/abstain: every day is auto-clean from start_date; a checkin
+//              row means a SLIP (e.g. "smoked today"), no row = clean. Lets these
+//              accrue with zero daily interaction.
+await sql`ALTER TABLE habits ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'normal'`;
+// start_date: when tracking/the streak began (backdated at create time). For
+// 'normal' habits with an existing streak we also backfill checkins up to it; for
+// 'streak' habits, clean days are counted from here.
+await sql`ALTER TABLE habits ADD COLUMN IF NOT EXISTS start_date DATE`;
+
 // --- Multi-profile migration (backward-compatible) ------------------------
 // Ensure a default profile exists (seeded with the current shared passcode) so
 // existing habits and the currently-deployed app keep working.

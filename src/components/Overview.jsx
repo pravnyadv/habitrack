@@ -59,9 +59,13 @@ export default function Overview({ initialHabits = [], profileId }) {
     };
   }, []);
 
+  // Streak (quit/abstain) habits store slip days, not completions — they'd skew
+  // "avg completion". The Overview is about normal habits only.
+  const norm = habits.filter((h) => h.kind !== 'streak');
+
   const agg = useMemo(() => {
-    if (!habits.length) return null;
-    const H = habits.map((h) => ({ daySet: new Set(h.days), sched: schedOf(h), activeFrom: activeFromOf(h) }));
+    if (!norm.length) return null;
+    const H = norm.map((h) => ({ daySet: new Set(h.days), sched: schedOf(h), activeFrom: activeFromOf(h) }));
     const dayTally = (ds) => {
       const wd = new Date(ds + 'T00:00:00').getDay();
       let sc = 0, dn = 0;
@@ -79,11 +83,11 @@ export default function Overview({ initialHabits = [], profileId }) {
       if (sc > 0) { sumPct += dn / sc; daysWithSched++; if (dn === sc) perfect++; }
     }
     const avg = daysWithSched ? Math.round((sumPct / daysWithSched) * 100) : 0;
-    const longest = Math.max(0, ...habits.map((h) => stats(h).longest));
+    const longest = Math.max(0, ...norm.map((h) => stats(h).longest));
 
     let heat;
     if (filter === 'all') {
-      const total = habits.reduce((n, h) => n + h.days.filter((d) => d >= earliest && d <= TODAY).length, 0);
+      const total = norm.reduce((n, h) => n + h.days.filter((d) => d >= earliest && d <= TODAY).length, 0);
       const dayInfo = (ds) => {
         const { sc, dn } = dayTally(ds);
         if (sc === 0) return { cls: 'bg-slate-100/70 dark:bg-slate-800/40', title: ds + ' · no habits' };
@@ -101,7 +105,7 @@ export default function Overview({ initialHabits = [], profileId }) {
         </div>`;
       heat = heatmapBlock({ earliest, dayInfo, legend, countText: `${total} check-in${total === 1 ? '' : 's'} in the last year` });
     } else {
-      const h = habits.find((x) => x.id === filter);
+      const h = norm.find((x) => x.id === filter);
       heat = h ? githubGraph(h) : '';
     }
     return { avg, perfect, longest, heat };
@@ -117,7 +121,7 @@ export default function Overview({ initialHabits = [], profileId }) {
 
   function exportRecords(kind) {
     setMenuOpen(false);
-    const records = buildExportRecords(habits);
+    const records = buildExportRecords(norm);
     if (kind === 'csv') downloadFile(`habitrack-export-${TODAY}.csv`, toCSV(records), 'text/csv;charset=utf-8');
     else downloadFile(`habitrack-export-${TODAY}.json`, toJSON(records), 'application/json');
   }
@@ -126,7 +130,7 @@ export default function Overview({ initialHabits = [], profileId }) {
     <div>
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-slate-400">{viewing ? 'Last 12 months' : 'Your last 12 months'}</p>
-        {!viewing && habits.length > 0 && (
+        {!viewing && norm.length > 0 && (
           <div class="relative">
             <button aria-label="Export data" title="Export"
               class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white"
@@ -143,7 +147,7 @@ export default function Overview({ initialHabits = [], profileId }) {
         )}
       </div>
 
-      {!habits.length ? (
+      {!norm.length ? (
         <p class="py-16 text-center text-sm text-slate-400 dark:text-slate-500">No habits yet — add some to see your overview.</p>
       ) : (
         <>
@@ -154,7 +158,7 @@ export default function Overview({ initialHabits = [], profileId }) {
           </div>
           <div class="mt-6 flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
             <Chip active={filter === 'all'} onClick={() => setFilter('all')}>All habits</Chip>
-            {habits.map((h) => (
+            {norm.map((h) => (
               <Chip key={h.id} active={filter === h.id} onClick={() => setFilter(h.id)}>{h.emoji} {h.name}</Chip>
             ))}
           </div>

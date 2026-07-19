@@ -162,7 +162,8 @@ export async function canView(sql, viewerId, ownerId) {
 
 export async function listHabits(sql, profileId) {
   return sql`
-    SELECT h.id, h.name, h.emoji, h.color, h.schedule, h.created_at,
+    SELECT h.id, h.name, h.emoji, h.color, h.schedule, h.kind,
+           h.start_date::text AS start_date, h.created_at,
            COALESCE(
              (SELECT json_agg(c.day ORDER BY c.day)
               FROM checkins c
@@ -175,13 +176,24 @@ export async function listHabits(sql, profileId) {
   `;
 }
 
-export async function createHabit(sql, profileId, name, emoji, color, schedule) {
+export async function createHabit(sql, profileId, name, emoji, color, schedule, kind = 'normal', startDate = null) {
   const rows = await sql`
-    INSERT INTO habits (profile_id, name, emoji, color, schedule)
-    VALUES (${profileId}, ${name}, ${emoji}, ${color}, ${schedule})
-    RETURNING id, name, emoji, color, schedule, created_at
+    INSERT INTO habits (profile_id, name, emoji, color, schedule, kind, start_date)
+    VALUES (${profileId}, ${name}, ${emoji}, ${color}, ${schedule}, ${kind}, ${startDate})
+    RETURNING id, name, emoji, color, schedule, kind, start_date::text AS start_date, created_at
   `;
   return rows[0];
+}
+
+// Seed check-ins for many days at once (used to backfill an existing streak on a
+// normal habit at creation). Idempotent — duplicate (habit, day) rows are ignored.
+export async function backfillCheckins(sql, habitId, days) {
+  if (!days.length) return;
+  await sql`
+    INSERT INTO checkins (habit_id, day)
+    SELECT ${habitId}, d::date FROM unnest(${days}::text[]) AS d
+    ON CONFLICT (habit_id, day) DO NOTHING
+  `;
 }
 
 export async function deleteHabit(sql, profileId, id) {
