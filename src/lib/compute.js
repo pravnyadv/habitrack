@@ -57,14 +57,19 @@ export function startOf(habit) {
 }
 
 // Clean-streak stats for a 'streak' habit. days = slip days; every other day in
-// [start, today] is clean. current = clean days up to today (0 if today is a
-// slip); longest = longest clean run; total = total clean days; slips = count.
+// [start, today] is clean. current = clean days up to today; a slip logged for
+// TODAY is graced (skipped, not counted) rather than breaking the streak — the
+// day isn't over, mirroring how normal-habit streaks treat today. longest =
+// longest clean run; total = total clean days; slips = count.
 export function streakStats(habit) {
   const slips = new Set(habit.days);
   const start = startOf(habit);
   let current = 0;
   for (let d = TODAY; d >= start; d = addDays(d, -1)) {
-    if (slips.has(d)) break;
+    if (slips.has(d)) {
+      if (d === TODAY) continue; // today's slip isn't final — grace it
+      break;
+    }
     current++;
   }
   let longest = 0, run = 0, total = 0, slipCount = 0;
