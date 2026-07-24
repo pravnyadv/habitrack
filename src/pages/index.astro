@@ -111,20 +111,16 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         <button type="button" data-tab="streak" class="rounded-lg py-2 transition">Streaks</button>
       </div>
 
-      <!-- Today progress -->
-      <section id="today-card" class="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div class="flex items-center justify-between">
-          <div>
+      <!-- Today progress: one ring per track — habits (done/due today) and quits
+           (clean vs slipped today). Shows on both tabs; each ring appears only if
+           that track has anything to show today. Rings are filled by JS. -->
+      <section id="today-card" class="mb-4 hidden rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:mb-6 sm:p-5">
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
             <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Today's progress</p>
-            <p id="today-count" class="mt-0.5 text-2xl font-bold tabular-nums">0 / 0</p>
+            <p id="today-status" class="mt-1 text-sm font-semibold">&nbsp;</p>
           </div>
-          <div id="today-ring" class="relative h-16 w-16">
-            <svg class="h-16 w-16 -rotate-90" viewBox="0 0 36 36">
-              <circle cx="18" cy="18" r="15.5" fill="none" class="stroke-slate-100 dark:stroke-slate-800" stroke-width="4" />
-              <circle id="today-progress" cx="18" cy="18" r="15.5" fill="none" class="stroke-emerald-500" stroke-width="4" stroke-linecap="round" stroke-dasharray="97.4" stroke-dashoffset="97.4" style="transition: stroke-dashoffset .5s ease" />
-            </svg>
-            <span id="today-pct" class="absolute inset-0 flex items-center justify-center text-sm font-semibold tabular-nums">0%</span>
-          </div>
+          <div id="today-rings" class="flex shrink-0 items-start gap-3 sm:gap-4"></div>
         </div>
       </section>
 
@@ -503,7 +499,7 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         // full arrows (with stem) read as "move", distinct from the collapse chevron
         const path = dir === 'up' ? 'M12 19.5V4.5m0 0L6.75 9.75M12 4.5l5.25 5.25' : 'M12 4.5v15m0 0 5.25-5.25M12 19.5 6.75 14.25';
         return `<button ${disabled ? 'disabled' : `data-move="${dir}" data-habit-move="${id}"`} aria-label="Move ${dir}"
-            class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent dark:text-slate-400 dark:hover:bg-slate-800">
+            class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800">
             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="${path}"/></svg>
           </button>`;
       }
@@ -522,24 +518,30 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
           ? cell('Streak', s.current) + cell('Best', s.longest) + cell('Clean', s.total) + cell('Slips', s.slips)
           : cell('Streak', s.current) + cell('Best', s.longest) + cell('Total', s.total) + cell('30-day', s.rate30 + '%');
 
+        // Controls (reorder / edit / delete) sit at the TOP of the expanded panel
+        // so they're reachable without scrolling past the calendar + graph. (Trial
+        // placement — was previously at the bottom.)
+        const controls = viewing ? '' : `<div class="mb-5 flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5">
+                ${reorderBtn('up', habit.id)}
+                ${reorderBtn('down', habit.id)}
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button data-edit="${habit.id}" class="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+                  <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931z"/></svg>Edit</button>
+                <button data-delete="${habit.id}" aria-label="Delete habit" title="Delete" class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-rose-500 transition hover:border-rose-200 hover:bg-rose-50 dark:border-slate-700 dark:text-rose-400 dark:hover:border-rose-900 dark:hover:bg-rose-950/40">
+                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.16-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.04-2.09 1.02-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg></button>
+              </div>
+            </div>`;
+
         return `
           <div class="mt-5 border-t border-slate-100 pt-5 dark:border-slate-800">
+            ${controls}
             ${calendarGrid(habit)}
             <div class="mt-6 grid grid-cols-4 gap-2">
               ${statCells}
             </div>
             <div class="mt-5">${streak ? streakGraph(habit) : githubGraph(habit)}</div>
-            ${viewing ? '' : `<div class="mt-5 flex items-center justify-between border-t border-slate-100 pt-4 dark:border-slate-800">
-              <div class="flex items-center gap-1">
-                <span class="mr-0.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">Reorder</span>
-                ${reorderBtn('up', habit.id)}
-                ${reorderBtn('down', habit.id)}
-              </div>
-              <div class="flex items-center gap-1">
-                <button data-edit="${habit.id}" class="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">Edit</button>
-                <button data-delete="${habit.id}" class="rounded-lg px-3 py-1.5 text-xs font-medium text-rose-500 transition hover:bg-rose-50 dark:hover:bg-rose-950/40">Delete</button>
-              </div>
-            </div>`}
           </div>`;
       }
 
@@ -581,9 +583,8 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         const shown = habits.filter((h) => isStreak(h) === streakTab);
         const has = shown.length > 0;
 
-        // Today-card (completion ring) is normal-only; the week strip + its header
-        // appear on both tabs (streak cards use the same 7-day strip).
-        document.getElementById('today-card').classList.toggle('hidden', streakTab);
+        // Today-card shows on both tabs (habits + quit rings); renderTodayCard
+        // decides its own visibility from the data. The week strip header follows `has`.
         weekHead.classList.toggle('hidden', !has);
 
         document.getElementById('empty-state').classList.toggle('hidden', has);
@@ -604,17 +605,60 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         renderTodayCard();
       }
 
+      // Small progress ring: ordered color segments drawn from 12 o'clock over a
+      // faint track. `gap` (path units) inserts a rounded break between segments
+      // (the quit ring uses it to separate clean from slip). Geometry matches the
+      // rest of the app (r=15.5, stroke 4).
+      const RING_GREEN = '#10b981', RING_SLIP = '#ef4444';
+      function ringSvg(segments, gap = 0) {
+        const C = 2 * Math.PI * 15.5;
+        let start = 0, arcs = '';
+        for (const s of segments) {
+          const len = Math.max(0, s.frac * C - gap);
+          if (len > 0.01) {
+            arcs += `<circle cx="18" cy="18" r="15.5" fill="none" stroke="${s.color}" stroke-width="4"${gap ? ' stroke-linecap="round"' : ''} stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-(start + gap / 2)}" style="transition:stroke-dashoffset .5s ease"/>`;
+          }
+          start += s.frac * C;
+        }
+        return `<svg class="h-12 w-12 -rotate-90 sm:h-14 sm:w-14" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" class="stroke-slate-100 dark:stroke-slate-800" stroke-width="4"/>${arcs}</svg>`;
+      }
+      function ringBlock(svg, center, title, sub) {
+        return `<div>
+            <div class="relative mx-auto h-12 w-12 sm:h-14 sm:w-14">${svg}<span class="absolute inset-0 flex items-center justify-center text-xs font-semibold tabular-nums sm:text-sm">${center}</span></div>
+            <div class="mt-1 text-center text-[11px] font-semibold leading-tight text-slate-500 dark:text-slate-400">${title}<span class="mt-px hidden text-[10px] font-medium text-slate-400 dark:text-slate-500 sm:block">${sub}</span></div>
+          </div>`;
+      }
+
+      // Two-track daily summary: habits done/due today + quits clean/slipped today.
+      // Each ring shows only if its track has something today; card hides if neither.
       function renderTodayCard() {
+        const card = document.getElementById('today-card');
         const todayDow = dow(TODAY);
+        const quits = habits.filter(isStreak);
         const due = habits.filter((h) => !isStreak(h) && schedOf(h).has(todayDow));
-        const total = due.length;
-        let done = 0;
-        for (const h of due) if (h.days.includes(TODAY)) done++;
-        const pct = total ? Math.round((done / total) * 100) : 0;
-        document.getElementById('today-count').textContent = `${done} / ${total}`;
-        document.getElementById('today-pct').textContent = pct + '%';
-        const circ = 2 * Math.PI * 15.5;
-        document.getElementById('today-progress').style.strokeDashoffset = String(circ * (1 - pct / 100));
+        const done = due.filter((h) => h.days.includes(TODAY)).length;
+        const slip = quits.filter((h) => h.days.includes(TODAY)).length;
+        const clean = quits.length - slip;
+
+        const showHabits = due.length > 0, showQuits = quits.length > 0;
+        card.classList.toggle('hidden', !showHabits && !showQuits);
+        if (!showHabits && !showQuits) return;
+
+        let rings = '';
+        if (showHabits) rings += ringBlock(ringSvg([{ frac: done / due.length, color: RING_GREEN }]), `${done}/${due.length}`, 'Habits', 'done today');
+        if (showQuits) rings += ringBlock(ringSvg([
+          { frac: clean / quits.length, color: RING_GREEN },
+          { frac: slip / quits.length, color: RING_SLIP },
+        ], 1.5), `${clean}/${quits.length}`, 'Quit', 'clean today');
+        document.getElementById('today-rings').innerHTML = rings;
+
+        let text, cls;
+        if (slip > 0) { text = `${slip} slip${slip > 1 ? 's' : ''} today`; cls = 'text-red-500 dark:text-red-400'; }
+        else if (showHabits && done < due.length) { const left = due.length - done; text = `${left} habit${left > 1 ? 's' : ''} to go`; cls = 'text-slate-500 dark:text-slate-400'; }
+        else { text = showQuits ? 'All clean · keep going' : 'All done today'; cls = 'text-emerald-600 dark:text-emerald-400'; }
+        const statusEl = document.getElementById('today-status');
+        statusEl.textContent = text;
+        statusEl.className = 'mt-1 text-sm font-semibold ' + cls;
       }
 
       // ---- interactions ------------------------------------------------------
