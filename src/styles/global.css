@@ -34,3 +34,17 @@ button { -webkit-tap-highlight-color: transparent; }
 /* Hide scrollbars on the horizontal day strips */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* iOS Safari auto-zooms when a focused form control has a font-size below 16px
+   and never zooms back out. Enforce a 16px floor on all controls on touch
+   devices so tapping any input never triggers the zoom. Scoped to `pointer:
+   coarse` (phones/tablets) so desktop keeps its smaller input text; the id
+   selector's specificity beats Tailwind's text-sm/text-xs utilities, and the
+   intentionally-larger emoji picker (#habit-emoji) is left alone. */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not(#habit-emoji),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
