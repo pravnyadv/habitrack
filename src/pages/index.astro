@@ -143,8 +143,11 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
             <span class="pointer-events-none absolute -bottom-1 -right-1 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-emerald-500 text-white shadow ring-2 ring-white dark:ring-slate-900">
               <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 24 24"><path d="M21.731 2.269a2.625 2.625 0 0 0-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 0 0 0-3.712ZM19.513 8.199l-3.712-3.712-8.4 8.4a5.25 5.25 0 0 0-1.32 2.214l-.8 2.685a.75.75 0 0 0 .933.933l2.685-.8a5.25 5.25 0 0 0 2.214-1.32l8.4-8.4Z" /></svg>
             </span>
-            <div id="emoji-pop" class="no-scrollbar absolute left-0 top-full z-20 mt-1.5 hidden max-h-64 w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
-              <div id="emoji-grid" class="grid grid-cols-6 gap-1"></div>
+            <div id="emoji-pop" class="absolute left-0 top-full z-20 mt-1.5 hidden w-64 rounded-xl border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+              <input id="emoji-search" type="text" autocomplete="off" placeholder="Search emoji…"
+                class="mb-2 w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-sm outline-none focus:border-emerald-400 dark:border-slate-700 dark:bg-slate-800" />
+              <div id="emoji-grid" class="no-scrollbar grid max-h-52 grid-cols-6 gap-1 overflow-y-auto"></div>
+              <p id="emoji-none" class="hidden py-4 text-center text-xs text-slate-400 dark:text-slate-500">No emoji match that.</p>
             </div>
           </div>
           <!-- Content spine: input, colors, and frequency all share this left edge -->
@@ -207,17 +210,37 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
       try { initialHabits = JSON.parse(document.getElementById('initial-habits')?.textContent || '[]'); } catch {}
 
       // ---- constants ---------------------------------------------------------
+      // Emoji suggestions for the habit picker, as [emoji, searchKeywords]. The
+      // popup scrolls and is searchable, so this list can grow freely — add a new
+      // ['🙂','keyword synonyms'] entry to the relevant category row below. Keep
+      // each emoji listed once (keywords can cover multiple contexts).
       const EMOJIS = [
+        // marks & motivation
+        ['✅','check done complete tick'],['⭐','star favorite'],['🔥','fire streak hot'],['❤️','heart love'],['🎯','target goal aim focus'],['🏆','trophy win achievement'],['📌','pin remember'],['⏰','alarm clock time wake'],
         // movement & fitness
-        '✅','🏃','🚶','🚴','🏊','🏋️','🧘','💪','🤸','🧗','⚽','🏀',
-        // food, drink & body
-        '💧','🥗','🥦','🍎','🥤','☕','😴','🛌','💊','🦷','🚿','⚖️',
+        ['🏃','run running jog cardio exercise'],['🚶','walk walking steps'],['🚴','bike cycling ride'],['🏊','swim swimming pool'],['🏋️','gym workout lift weights strength'],['🧘','yoga meditate stretch calm'],['💪','muscle strength strong gym'],['🤸','gymnastics exercise cartwheel'],['🧗','climb climbing bouldering'],['⛹️','basketball sport ball'],['🤾','handball sport'],['🚣','row rowing boat'],['⚽','soccer football sport'],['🏀','basketball sport'],['🎾','tennis sport'],['🏸','badminton sport'],['🥊','boxing fight gym'],['⛳','golf sport'],['🏓','ping pong table tennis'],['🥾','hike hiking boot walk'],
+        // fruit & veg
+        ['🍎','apple fruit food'],['🍏','apple green fruit food'],['🍌','banana fruit food'],['🍊','orange fruit citrus food'],['🍓','strawberry berry fruit food'],['🫐','blueberry berry fruit food'],['🍇','grapes fruit food'],['🍉','watermelon melon fruit food'],['🍒','cherry cherries fruit food'],['🍑','peach fruit food'],['🥭','mango fruit food'],['🍍','pineapple fruit food'],['🥝','kiwi fruit food'],['🥥','coconut fruit food'],['🍅','tomato veg vegetable food'],['🥑','avocado fruit veg food'],['🥦','broccoli veg vegetable green food'],['🥕','carrot veg vegetable food'],['🌽','corn maize veg food'],['🥒','cucumber pickle veg food'],['🫑','pepper bell veg food'],['🥬','lettuce greens salad veg food'],['🧄','garlic veg food'],['🧅','onion veg food'],['🍠','sweet potato yam veg food'],['🥔','potato veg vegetable food'],
+        // meals & food
+        ['🍞','bread carb food'],['🥐','croissant bread food'],['🥖','baguette bread food'],['🧀','cheese dairy food'],['🥚','egg protein food'],['🍳','egg fry cooking breakfast food'],['🥩','steak meat protein food'],['🍗','chicken poultry meat protein food'],['🍖','meat protein food'],['🥓','bacon meat food'],['🌭','hotdog food'],['🍔','burger hamburger fast junk food quit'],['🍟','fries chips fast food'],['🍕','pizza italian food'],['🌮','taco mexican food'],['🌯','burrito wrap mexican food'],['🥙','pita wrap kebab food'],['🧆','falafel food'],['🥪','sandwich food'],['🥗','salad healthy veg food'],['🍝','pasta spaghetti italian food'],['🍜','ramen noodles soup food'],['🍲','stew soup pot food'],['🍛','curry rice food'],['🍣','sushi japanese fish food'],['🍱','bento lunch box japanese food'],['🥟','dumpling food'],['🍤','shrimp prawn fried food'],['🍚','rice food'],['🍙','rice ball onigiri food'],['🥡','takeout box food'],['🍿','popcorn snack food'],['🧂','salt seasoning food'],['🥜','peanut nuts snack food'],
+        // sweets & treats
+        ['🍩','donut doughnut sweet dessert food'],['🍪','cookie biscuit sweet dessert food'],['🎂','cake birthday sweet dessert food'],['🍰','cake slice sweet dessert food'],['🧁','cupcake sweet dessert food'],['🥧','pie sweet dessert food'],['🍫','chocolate candy sweet food'],['🍬','candy sweet food'],['🍭','lollipop candy sweet food'],['🍮','pudding custard flan sweet dessert food'],['🍯','honey sweet food'],['🍦','ice cream soft serve sweet dessert food'],['🍨','ice cream sweet dessert food'],
+        // drinks
+        ['💧','water drink hydrate hydration'],['☕','coffee caffeine drink'],['🍵','tea green drink'],['🧃','juice box drink'],['🥤','soda soft drink cup'],['🧋','boba bubble tea drink milk'],['🥛','milk dairy drink'],['🍺','beer alcohol drink quit sober'],['🍷','wine alcohol drink quit'],['🍶','sake alcohol drink'],['🥂','champagne celebrate alcohol drink'],['🧉','mate drink'],
+        // health & body
+        ['😴','sleep rest tired'],['🛌','sleep bed rest'],['💊','pill medicine vitamin supplement'],['💉','injection shot vaccine medicine'],['🩺','stethoscope doctor health checkup'],['🦷','tooth teeth dental floss brush'],['🚿','shower wash bath hygiene'],['🛁','bath bathe hygiene'],['🧴','lotion skincare cream'],['⚖️','scale weight balance'],['🩹','bandage plaster heal'],['🧠','brain mind memory focus learn'],['🫀','heart cardio health organ'],['🧼','soap wash clean hygiene'],
         // mind, learning & work
-        '📖','📚','✍️','📝','🧠','🎯','💻','🗣️','🎓','🧩','🌐','📅',
-        // creativity, spirit & calm
-        '🎨','🎸','🎹','🎧','🙏','🌙','☀️','🌱','🧴','🕯️','📷','🍳',
-        // home, money, quitting & pets
-        '🧹','🧺','💰','⏰','📵','🚭','🍺','🎰','🐕','🌿','👨‍👩‍👧','📞',
+        ['📖','read reading book study'],['📚','books read study library'],['✍️','write writing journal'],['📝','note memo journal task write'],['💻','laptop work code computer'],['🖥️','computer desktop work'],['🗣️','speak talk language speaking practice'],['🎓','study learn graduate school education'],['🧩','puzzle solve brain'],['🌐','web internet language online'],['📅','calendar plan schedule date'],['🔬','science lab research microscope'],['🗂️','files organize folder work'],['💼','work business job briefcase'],['📊','chart stats data analytics work'],['⌨️','keyboard type work code'],['🖊️','pen write writing'],
+        // creativity & hobbies
+        ['🎨','art paint draw creative'],['🎸','guitar music instrument play'],['🎹','piano keyboard music instrument play'],['🎧','music headphones listen'],['🎤','sing microphone karaoke music'],['🎬','film movie video shoot'],['📷','photo camera photography'],['🎮','game gaming play video controller'],['♟️','chess strategy game'],['🧶','knit yarn crochet craft'],['🪡','sew sewing needle craft'],['🎲','dice board game'],['🎻','violin music instrument'],['🥁','drums music instrument'],['📸','photo camera photography selfie'],
+        // spirit & calm
+        ['🙏','pray prayer gratitude thanks meditate'],['🧎','kneel pray prayer'],['🕉️','om hindu spiritual meditate'],['☮️','peace calm'],['🌙','moon night sleep evening'],['☀️','sun morning day sunshine'],['🕯️','candle calm meditate light'],['📿','beads prayer meditate mala'],
+        // nature & outdoors
+        ['🌱','plant seedling grow garden nature'],['🌿','herb plant green nature'],['🌳','tree nature outdoors'],['🌸','flower blossom spring nature'],['🏔️','mountain hike nature outdoors'],['🏕️','camp camping tent outdoors nature'],['🌊','wave sea ocean water swim'],['🚶‍♀️','walk walking woman steps'],['🐕','dog pet walk animal'],['🐈','cat pet animal'],['🌻','sunflower flower nature'],['🍃','leaf leaves wind nature'],
+        // home, money & chores
+        ['🧹','clean sweep broom chore tidy'],['🧺','laundry basket chore wash clothes'],['🛒','shop cart grocery shopping'],['💰','money save savings budget cash'],['💵','money cash dollar budget'],['🏦','bank money finance save'],['📈','invest stocks money growth chart'],['📵','no phone offline screen focus'],['📞','call phone contact'],['🔧','fix tool repair maintenance'],['🪥','toothbrush brush teeth dental hygiene'],
+        // quitting & vices
+        ['🚭','no smoking quit cigarette stop'],['🎰','gamble gambling casino quit'],['🚬','cigarette smoke smoking quit'],['📱','phone screen scroll social quit'],['🕹️','game gaming screen quit'],
       ];
 
       let habits = [];
@@ -795,14 +818,29 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         setColor(b.dataset.color);
       });
 
-      // emoji picker: click the box to open a grid of suggestions
+      // emoji picker: click the box to open a searchable grid of suggestions
       const emojiInput = document.getElementById('habit-emoji');
       const emojiPop = document.getElementById('emoji-pop');
       const emojiGrid = document.getElementById('emoji-grid');
-      emojiGrid.innerHTML = EMOJIS.map((e) =>
-        `<button type="button" data-emoji="${e}" class="flex h-9 items-center justify-center rounded-lg text-xl transition hover:bg-slate-100 dark:hover:bg-slate-800">${e}</button>`).join('');
-      const showEmojiPop = (show) => emojiPop.classList.toggle('hidden', !(show ?? emojiPop.classList.contains('hidden')));
+      const emojiSearch = document.getElementById('emoji-search');
+      const emojiNone = document.getElementById('emoji-none');
+      // Render the grid, optionally filtered by a query (all query tokens must
+      // appear in an emoji's keywords). Empty query shows the full list.
+      function renderEmojiGrid(q = '') {
+        const toks = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        const list = toks.length ? EMOJIS.filter(([, kw]) => toks.every((t) => kw.includes(t))) : EMOJIS;
+        emojiGrid.innerHTML = list.map(([e]) =>
+          `<button type="button" data-emoji="${e}" class="flex h-9 items-center justify-center rounded-lg text-xl transition hover:bg-slate-100 dark:hover:bg-slate-800">${e}</button>`).join('');
+        emojiNone.classList.toggle('hidden', list.length > 0);
+      }
+      renderEmojiGrid();
+      const showEmojiPop = (show) => {
+        const willShow = show ?? emojiPop.classList.contains('hidden');
+        emojiPop.classList.toggle('hidden', !willShow);
+        if (willShow) { emojiSearch.value = ''; renderEmojiGrid(); }   // fresh list each open
+      };
       emojiInput.addEventListener('click', (e) => { e.stopPropagation(); showEmojiPop(); });
+      emojiSearch.addEventListener('input', () => renderEmojiGrid(emojiSearch.value));
       emojiGrid.addEventListener('click', (e) => {
         const b = e.target.closest('[data-emoji]');
         if (!b) return;
