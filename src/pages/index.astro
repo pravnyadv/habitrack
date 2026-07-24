@@ -200,7 +200,7 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
     <script id="initial-profile" type="application/json" is:inline set:html={profileJson}></script>
 
     <script>
-      import { COLORS, COLORS_DARK, MONTHS, WD, TODAY, BACKFILL_DAYS, iso, pad2, addDays, dow, schedOf, stats, windowStart, heatmapBlock, githubGraph, streakGraph, isStreak, startOf, escapeHtml, connectRealtime, apiFetch } from '../lib/compute.js';
+      import { COLORS, COLORS_DARK, MONTHS, WD, TODAY, BACKFILL_DAYS, iso, pad2, addDays, dow, schedOf, stats, windowStart, heatmapBlock, githubGraph, streakGraph, isStreak, startOf, activeFromOf, SLIP_COLOR, escapeHtml, connectRealtime, apiFetch } from '../lib/compute.js';
 
       // Earliest day a check-in can still be marked (today − (BACKFILL_DAYS−1)).
       const BACKFILL_START = addDays(TODAY, -(BACKFILL_DAYS - 1));
@@ -387,16 +387,11 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
 
         // Streak habits: every day is clean from the start date; habit.days = slips.
         const streak = isStreak(habit);
-        const SLIP = '#ef4444';
 
-        // habit's active-from date. For a streak it's the start date; for a normal
-        // habit it's the earlier of created date / first check-in. Nothing before
-        // this can be "missed" — the habit didn't exist / streak hadn't begun.
-        const firstCheckin = habit.days.length ? habit.days.reduce((a, b) => (a < b ? a : b)) : null;
-        const created = (habit.created_at || '').slice(0, 10) || null;
-        const activeFrom = streak
-          ? startOf(habit)
-          : ((firstCheckin && created) ? (firstCheckin < created ? firstCheckin : created) : (firstCheckin || created));
+        // habit's active-from date — nothing before it can be "missed" (the habit
+        // didn't exist / streak hadn't begun). Streaks start at their start date;
+        // normal habits use the shared earlier-of-created/first-checkin helper.
+        const activeFrom = streak ? startOf(habit) : activeFromOf(habit);
 
         // Weekday headers: medium/secondary gray structural labels.
         const wdRow = WD.map((w) => `<div class="text-center text-[11px] font-medium text-slate-500 dark:text-slate-400">${w}</div>`).join('');
@@ -424,6 +419,17 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
           : `<div class="relative aspect-square" title="${title}">`;
         const cellClose = (ds) => editableDay(ds) ? '</button>' : '</div>';
 
+        // Filled capsule cell (a done day, or a clean streak day). Squares the side
+        // that abuts a same-state neighbor so consecutive days form one continuous
+        // bar; `near` is the neighbor predicate (set.has for normal, isClean for streak).
+        const capsuleCell = (ds, d, near, title) => {
+          const leftSq = near(addDays(ds, -1)), rightSq = near(addDays(ds, 1));
+          const full = leftSq || rightSq;
+          const br = `${leftSq ? 0 : R}px ${rightSq ? 0 : R}px ${rightSq ? 0 : R}px ${leftSq ? 0 : R}px`;
+          const fill = `<span class="${CTR}" style="width:${full ? '100%' : '80%'};height:${HGT};background:${color};border-radius:${br}"></span>`;
+          return `${cellOpen(ds, title)}${fill}<span class="${NUM} font-medium text-white">${d}</span>${cellClose(ds)}`;
+        };
+
         let cells = '';
         for (let i = 0; i < firstDow; i++) cells += '<div></div>';
         for (let d = 1; d <= daysInMonth; d++) {
@@ -439,14 +445,9 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
             const slip = set.has(ds);
             const isClean = (x) => x >= activeFrom && x <= TODAY && !set.has(x);
             if (!future && !beforeActive && !slip) {
-              const leftSq = isClean(addDays(ds, -1));
-              const rightSq = isClean(addDays(ds, 1));
-              const full = leftSq || rightSq;
-              const br = `${leftSq ? 0 : R}px ${rightSq ? 0 : R}px ${rightSq ? 0 : R}px ${leftSq ? 0 : R}px`;
-              const fill = `<span class="${CTR}" style="width:${full ? '100%' : '80%'};height:${HGT};background:${color};border-radius:${br}"></span>`;
-              cells += `${cellOpen(ds, ds + ' · clean')}${fill}<span class="${NUM} font-medium text-white">${d}</span>${cellClose(ds)}`;
+              cells += capsuleCell(ds, d, isClean, ds + ' · clean');
             } else if (slip) {
-              const fill = `<span class="${CTR}" style="width:80%;height:${HGT};background:${SLIP};border-radius:10px"></span>`;
+              const fill = `<span class="${CTR}" style="width:80%;height:${HGT};background:${SLIP_COLOR};border-radius:10px"></span>`;
               cells += `${cellOpen(ds, ds + ' · slipped')}${fill}<span class="${NUM} font-medium text-white">${d}</span>${cellClose(ds)}`;
             } else {
               cells += `<div class="relative flex aspect-square items-center justify-center text-sm font-normal tabular-nums text-slate-500 dark:text-slate-400">${d}</div>`;
@@ -455,13 +456,7 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
           }
 
           if (done) {
-            // square the side that abuts another done day; full-width when linked
-            const leftSq = set.has(addDays(ds, -1));
-            const rightSq = set.has(addDays(ds, 1));
-            const full = leftSq || rightSq;
-            const br = `${leftSq ? 0 : R}px ${rightSq ? 0 : R}px ${rightSq ? 0 : R}px ${leftSq ? 0 : R}px`;
-            const fill = `<span class="${CTR}" style="width:${full ? '100%' : '80%'};height:${HGT};background:${color};border-radius:${br}"></span>`;
-            cells += `${cellOpen(ds, ds + ' · done')}${fill}<span class="${NUM} font-medium text-white">${d}</span>${cellClose(ds)}`;
+            cells += capsuleCell(ds, d, (x) => set.has(x), ds + ' · done');
           } else if (isToday && scheduled) {
             // today, not done — transparent tile with an inset ring in habit color
             const fill = `<span class="${CTR}" style="width:80%;height:${HGT};border-radius:${R}px;box-shadow:inset 0 0 0 1.5px ${color}"></span>`;
@@ -482,16 +477,13 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="${dir === 'prev' ? 'M15.75 19.5 8.25 12l7.5-7.5' : 'm8.25 4.5 7.5 7.5-7.5 7.5'}"/></svg>
           </button>`;
 
-        const legend = streak
-          ? `<div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500 dark:text-slate-400">
-              <span class="flex items-center gap-1.5"><span class="inline-block h-3 w-6 rounded-full" style="background:${color}"></span>Clean</span>
-              <span class="flex items-center gap-1.5"><span class="inline-block h-3.5 w-3.5 rounded" style="background:${SLIP}"></span>Slip</span>
-            </div>`
-          : `<div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500 dark:text-slate-400">
-            <span class="flex items-center gap-1.5"><span class="inline-block h-3 w-6 rounded-full" style="background:${color}"></span>Streak</span>
-            <span class="flex items-center gap-1.5"><span class="inline-block h-3.5 w-3.5 rounded" style="background:${tint}"></span>Missed</span>
-            <span class="flex items-center gap-1.5"><span class="inline-block h-3.5 w-3.5 rounded" style="box-shadow:inset 0 0 0 1.5px ${color}"></span>Today</span>
-          </div>`;
+        const legendItems = streak
+          ? `<span class="flex items-center gap-1.5"><span class="inline-block h-3 w-6 rounded-full" style="background:${color}"></span>Clean</span>
+             <span class="flex items-center gap-1.5"><span class="inline-block h-3.5 w-3.5 rounded" style="background:${SLIP_COLOR}"></span>Slip</span>`
+          : `<span class="flex items-center gap-1.5"><span class="inline-block h-3 w-6 rounded-full" style="background:${color}"></span>Streak</span>
+             <span class="flex items-center gap-1.5"><span class="inline-block h-3.5 w-3.5 rounded" style="background:${tint}"></span>Missed</span>
+             <span class="flex items-center gap-1.5"><span class="inline-block h-3.5 w-3.5 rounded" style="box-shadow:inset 0 0 0 1.5px ${color}"></span>Today</span>`;
+        const legend = `<div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-500 dark:text-slate-400">${legendItems}</div>`;
 
         // Cap the calendar footprint (~70% of full width) so the tiles are ~30%
         // more compact. Cells shrink uniformly; inner-tile percentages are
@@ -568,8 +560,8 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
           </div>`;
       }
 
-      // ---- normal habit card (week strip / calendar) -------------------------
-      function normalCard(h) {
+      // ---- habit card: week strip (collapsed) / calendar (expanded), both kinds --
+      function habitCard(h) {
         const s = stats(h);
         const isOpen = expanded.has(h.id);
         const color = COLORS[h.color] || COLORS.emerald;
@@ -624,7 +616,7 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
         }
 
         weekHeader();
-        list.innerHTML = shown.map(normalCard).join('');
+        list.innerHTML = shown.map(habitCard).join('');
         renderTodayCard();
       }
 
@@ -632,7 +624,7 @@ const profileJson = JSON.stringify(initialProfile).replace(/</g, '\\u003c');
       // faint track. `gap` (path units) inserts a rounded break between segments
       // (the quit ring uses it to separate clean from slip). Geometry matches the
       // rest of the app (r=15.5, stroke 4).
-      const RING_GREEN = '#10b981', RING_SLIP = '#ef4444';
+      const RING_GREEN = COLORS.emerald, RING_SLIP = SLIP_COLOR;
       function ringSvg(segments, gap = 0) {
         const C = 2 * Math.PI * 15.5;
         let start = 0, arcs = '';
