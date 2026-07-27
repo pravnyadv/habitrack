@@ -2,25 +2,25 @@
 import '../styles/global.css';
 import AppHeader from '../components/AppHeader.astro';
 import { getSql, listHabits, getProfile } from '../lib/db.js';
-import { verifyToken, TOKEN_COOKIE } from '../lib/auth.js';
 
-// Middleware already guaranteed a valid session cookie for this route, so we can
-// fetch the signed-in profile's habits server-side and ship them in the HTML —
-// the app renders instantly with no empty→filled flash. (View-mode is a client
-// concept, so that rarer path still fetches; see boot().)
+// Middleware already verified the session cookie for this route and handed us the
+// profile id via locals, so we can fetch the signed-in profile's habits
+// server-side and ship them in the HTML. (View-mode is a client concept, so that
+// rarer path still fetches; see boot().)
 // We also SSR the profile identity: iOS copies the session COOKIE into an
 // installed PWA but NOT localStorage, so the client's `profile` can be empty even
 // with a valid cookie — the client hydrates from this instead of bouncing away.
+// Both queries go out in parallel — each Neon call is its own HTTP round trip, so
+// awaiting them in sequence would double this page's time-to-first-byte.
 const env = Astro.locals.runtime?.env;
-const token = Astro.cookies.get(TOKEN_COOKIE)?.value;
+const pid = Astro.locals.profileId;
 let initialHabits = [];
 let initialProfile = null;
 try {
-  const pid = token ? await verifyToken(token, env) : null;
   if (pid) {
     const sql = getSql(env);
-    initialHabits = await listHabits(sql, pid);
-    const p = await getProfile(sql, pid);
+    const [habits, p] = await Promise.all([listHabits(sql, pid), getProfile(sql, pid)]);
+    initialHabits = habits;
     if (p) initialProfile = { id: p.id, name: p.name, admin: !!p.is_admin };
   }
 } catch { initialHabits = []; }

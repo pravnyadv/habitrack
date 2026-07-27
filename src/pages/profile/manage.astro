@@ -2,18 +2,22 @@
 import ProfileLayout from '../../layouts/ProfileLayout.astro';
 import Manage from '../../components/profile/Manage.jsx';
 import { getSql, listProfiles, getProfile, listShareViewers, listPresence } from '../../lib/db.js';
-import { verifyToken, TOKEN_COOKIE } from '../../lib/auth.js';
 
+// Middleware gates this route and hands over the verified id, so there's no
+// second verifyToken here. The three independent reads go out in parallel —
+// each Neon call is its own HTTP round trip.
 const env = Astro.locals.runtime?.env;
 const sql = getSql(env);
-const pid = await verifyToken(Astro.cookies.get(TOKEN_COOKIE)?.value, env);
+const pid = Astro.locals.profileId;
 if (!pid) return Astro.redirect('/profile');
 
-const p = await getProfile(sql, pid);
+const [p, profiles, shared] = await Promise.all([
+  getProfile(sql, pid),
+  listProfiles(sql),
+  listShareViewers(sql, pid),
+]);
 if (!p) return Astro.redirect('/profile');
 const me = { id: p.id, name: p.name, admin: !!p.is_admin };
-const profiles = await listProfiles(sql);
-const shared = await listShareViewers(sql, pid);
 
 let presence = null;
 if (me.admin) {
