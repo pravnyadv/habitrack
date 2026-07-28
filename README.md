@@ -1,51 +1,45 @@
 # Habitrack 🦫
 
-A personal habit tracker — a cleaner take on [beaverhabits](https://github.com/daya0576/beaverhabits). Multi-profile, realtime cross-device sync, installable as a PWA, and deployed to the edge on Cloudflare Pages with a Neon Postgres backend.
+A personal habit tracker, built as a cleaner take on [beaverhabits](https://github.com/daya0576/beaverhabits). Multiple profiles, realtime sync across devices, installable as a PWA. Runs on Cloudflare Pages with a Neon Postgres backend.
 
 **Live:** https://habitrack-6yj.pages.dev
 
----
+## Features
 
-## What it does
+**Two tracker types.** A *habit* is checked off on each scheduled day. A *streak* works in reverse: it's for quitting things, so every day counts as clean from the start date and you only log the days you slipped. A quit streak grows without any daily input. Slips logged for today are graced instead of counted, since the day isn't over.
 
-**Two kinds of tracker.** *Habits* are the usual thing: you check off each scheduled day. *Streaks* are the inverse — quit/abstain trackers where every day is clean by default and you only log the days you slipped. That means a quit streak accrues with zero daily interaction, which is rather the point of one. A slip logged for *today* is graced rather than counted, mirroring how habit streaks treat a day that isn't over yet.
+**Per-habit schedules.** Each habit picks its own weekdays. Days off aren't counted as missed and streaks skip over them. Days before a habit started are never counted either.
 
-**Per-habit scheduling.** Each habit picks its own weekdays. Non-scheduled days are rest days — they don't count as missed and streaks skip straight over them. "Active from" is the earlier of the habit's start date or its first check-in, so days before you started are never held against you.
+**Multiple profiles.** Each profile has its own passcode and habits. Anyone with the URL can create one. The first profile is admin and can manage the others.
 
-**Multi-profile.** Each profile has its own passcode and its own habits. Profile creation is open to anyone with the URL; the first profile is admin and can manage the rest.
+**View-only sharing.** You can invite another profile to watch your data for accountability. The recipient has to accept, and access is strictly read-only: mutating endpoints ignore the `?profile=` parameter entirely, so a viewer has no way to write.
 
-**View-only sharing.** Invite another profile to watch your data for accountability. Shares are accept-based (pending until the recipient agrees) and strictly read-only — the mutating endpoints never honour a `?profile=` override, so a viewer physically cannot write to your habits.
+**Realtime sync.** Check in on your phone and your laptop updates immediately, over Pusher Channels. Clients patch their local state from the event instead of refetching.
 
-**Realtime.** Check in on your phone and your laptop updates instantly, via Pusher Channels. Clients apply remote events surgically rather than refetching.
+**Presence.** A heartbeat records when each profile last opened the app, so both sides of a share can see if the other is active.
 
-**Presence.** A lightweight heartbeat tracks when each profile last opened the app, so both sides of a share can see whether the other is around.
+**Stats and export.** Streaks, completion rates and contribution heatmaps, all computed in the browser from raw check-in days. CSV and JSON export on the Overview tab.
 
-**Stats.** Streaks, completion rates, and contribution heatmaps, computed client-side from each habit's raw check-in days. CSV/JSON export from the Overview tab.
-
-**Installable PWA** with an online-first service worker and an offline fallback page.
-
----
+**Offline-aware PWA.** Installable, with an online-first service worker and a static offline page.
 
 ## Stack
 
 | | |
 |---|---|
-| Framework | [Astro 5](https://astro.build) (`output: 'server'`) + `@astrojs/cloudflare` v12 |
-| UI | Preact islands (`@astrojs/preact` v4) + Tailwind v4 via `@tailwindcss/vite` |
+| Framework | [Astro 5](https://astro.build) (`output: 'server'`) with `@astrojs/cloudflare` v12 |
+| UI | Preact islands (`@astrojs/preact` v4), Tailwind v4 via `@tailwindcss/vite` |
 | Database | [Neon](https://neon.tech) Postgres via `@neondatabase/serverless` (HTTP driver) |
-| Realtime | [Pusher Channels](https://pusher.com/channels) (cluster set via `PUSHER_CLUSTER`) |
-| Hosting | Cloudflare Pages (Workers runtime, `nodejs_compat`) |
+| Realtime | [Pusher Channels](https://pusher.com/channels) |
+| Hosting | Cloudflare Pages, Workers runtime with `nodejs_compat` |
 
-A few version pins that look arbitrary but aren't:
+Four version choices that look arbitrary and aren't:
 
-- **`@astrojs/cloudflare` is pinned to v12** — the Astro-5-compatible line. v14+ requires Astro 7.
-- **`@astrojs/preact` is pinned to v4** for the same reason; v6 breaks the Cloudflare build with an unresolved `astro:preact:opts`.
-- **The Neon driver must stay HTTP.** A TCP `pg` driver won't run on the Workers runtime.
-- **Image optimization is disabled** (`passthroughImageService`) so `sharp` never gets pulled in — it has no prebuild for Node 26 and nowhere to live on Workers.
+* `@astrojs/cloudflare` stays on v12. That's the Astro 5 compatible line; v14+ needs Astro 7.
+* `@astrojs/preact` stays on v4 for the same reason. v6 breaks the Cloudflare build with an unresolved `astro:preact:opts`.
+* The Neon driver has to be the HTTP one. A TCP `pg` driver won't run on Workers.
+* Image optimization is off (`passthroughImageService`) so `sharp` never gets installed. It has no Node 26 prebuild and nowhere to run on Workers.
 
-The frontend is mid-migration: the `/profile` hub is Preact islands, while `index.astro` (the main app) is still a bundled vanilla-JS module. Shared logic lives in `src/lib/compute.js` so the two surfaces can't drift.
-
----
+The frontend is mid-migration. The `/profile` hub is Preact islands; `index.astro` is still a bundled vanilla JS module. Shared logic lives in `src/lib/compute.js` so the two can't drift apart.
 
 ## Layout
 
@@ -53,30 +47,28 @@ The frontend is mid-migration: the `/profile` hub is Preact islands, while `inde
 src/
   pages/
     index.astro          # main app: habit list, calendar, realtime (vanilla JS)
-    profile/             # the auth gate + account hub, one SSR page per tab
-      index.astro        #   Overview  — aggregate stats, heatmaps, export
-      switch.astro       #   Switch    — profile picker / invites / shared-with-you
-      login.astro        #   Login     — passcode entry for a chosen profile
-      create.astro       #   Create    — new profile
-      manage.astro       #   Manage    — rename, passcode, shares, admin presence
+    profile/             # auth gate and account hub, one SSR page per tab
+      index.astro        #   Overview  aggregate stats, heatmaps, export
+      switch.astro       #   Switch    profile picker, invites, shared with you
+      login.astro        #   Login     passcode entry
+      create.astro       #   Create    new profile
+      manage.astro       #   Manage    rename, passcode, shares, admin presence
     api/                 # habits, checkins, login/logout/session, profiles,
                          # shares, heartbeat, presence, rt-config
   components/
-    AppHeader.astro      # the shared header: logo, account chip, theme, heartbeat
-    Overview.jsx         # Preact: aggregate stats + heatmap + export
-    profile/*.jsx        # one focused island per /profile route
+    AppHeader.astro      # shared header: logo, account chip, theme, heartbeat
+    Overview.jsx         # Preact: aggregate stats, heatmap, export
+    profile/*.jsx        # one island per /profile route
   lib/
-    db.js                # getSql(env) + query helpers, all scoped by profileId
+    db.js                # getSql(env) and query helpers, all scoped by profileId
     auth.js              # PBKDF2 hashing, signed tokens, verifyToken
-    realtime.js          # Pusher REST broadcast (manual signing, workerd-safe)
+    realtime.js          # Pusher REST broadcast, manually signed for workerd
     compute.js           # shared client logic: dates, stats, heatmaps, apiFetch
-  middleware.js          # server-side auth gate for the app routes
-scripts/init-db.mjs      # idempotent schema create/migrate + seed
+  middleware.js          # server-side auth gate
+scripts/init-db.mjs      # idempotent schema create, migrate and seed
 ```
 
-Every `/profile` route SSR-fetches its own data from the session cookie and hydrates a focused island with `client:load` — so there are no loading spinners on navigation.
-
----
+Each `/profile` route fetches its own data server-side from the session cookie and hydrates one focused island with `client:load`, so navigating between tabs never shows a spinner.
 
 ## Data model
 
@@ -93,42 +85,40 @@ profile_shares  id, owner_id →profiles, viewer_id →profiles,
                 accepted_at, created_at, UNIQUE(owner_id, viewer_id)
 ```
 
-`schedule` is a CSV of JS weekday numbers (`0`=Sun … `6`=Sat). For a `normal` habit a `checkins` row means *done*; for a `streak` habit it means *slipped* — same table, inverted meaning. All stats are derived client-side from these raw days; nothing is precomputed.
+`schedule` is a CSV of JS weekday numbers, `0`=Sun through `6`=Sat.
 
-Check-ins can be backfilled for today and the recent past, capped by `BACKFILL_DAYS` in `compute.js` (currently 7). The server re-checks that window independently, so it holds regardless of what the UI allows.
+One table quirk worth knowing: a `checkins` row means *done* for a normal habit and *slipped* for a streak habit. Same storage, opposite meaning. Nothing is precomputed; all stats derive from these raw days in the browser.
 
----
+Check-ins can be backfilled for today and the recent past, limited by `BACKFILL_DAYS` in `compute.js` (currently 7). The server enforces that window independently of the UI.
 
 ## Auth
 
-Passcodes are hashed with PBKDF2-SHA256 (100k iterations, per-profile salt) and stored in the database — never in env.
+Passcodes are hashed with PBKDF2-SHA256, 100k iterations and a per-profile salt, stored in the database and never in env.
 
-1. `POST /api/login` verifies the hash and returns a signed token: `<profileId>.<exp>.<tokenVersion>.<hmac>`, HMAC'd with `AUTH_SECRET`.
-2. The same token is set as an httpOnly cookie, and `src/middleware.js` verifies it **before any HTML is sent** — a signed-out visit to `/` 302s to the gate rather than painting the app and then bouncing.
+1. `POST /api/login` checks the hash and returns a signed token, `<profileId>.<exp>.<tokenVersion>.<hmac>`, signed with `AUTH_SECRET`.
+2. The token is also set as an httpOnly cookie. `src/middleware.js` verifies it before any HTML is sent, so a signed-out visit to `/` redirects to the gate instead of painting the app and bouncing.
 3. Every data query is scoped to the authenticated `profileId`.
 
-**Revocation** rides on `token_version`, which is folded into the signed payload and checked against the profile row on each verify (one indexed read). Changing a passcode bumps the version, invalidating every token issued to every device; deleting a profile does the same implicitly. The check fails closed — a database error yields *unauthenticated*, never a 500 out of the auth gate.
+**Revocation** uses `token_version`, which is part of the signed payload and re-checked against the profile row on each verify (one indexed read). Changing a passcode bumps it and kills every token on every device. Deleting a profile does the same implicitly. The check fails closed: a database error means unauthenticated, never a 500 from the auth gate.
 
-**Login throttling:** five consecutive wrong passcodes lock a profile for 15 minutes (HTTP 429). Passcodes are a 6-character minimum.
+**Throttling.** Five wrong passcodes in a row lock a profile for 15 minutes and return 429. Minimum passcode length is 6.
 
-**PWA session restore:** installed PWAs and Safari's ITP can drop the httpOnly cookie while localStorage keeps the token. `POST /api/session` re-issues the cookie from a valid `Authorization: Bearer` token so the gate doesn't strand you on the picker.
-
----
+**Session restore.** Installed PWAs and Safari's ITP sometimes drop the httpOnly cookie while localStorage keeps the token. `POST /api/session` reissues the cookie from a valid bearer token so the gate doesn't strand you on the picker.
 
 ## Local development
 
-**Requirements:** Node 20+, a Neon database, a Pusher Channels app.
+Needs Node 20+, a Neon database and a Pusher Channels app.
 
 ```bash
 npm install
-npm run db:init     # create/migrate schema on Neon (idempotent), seeds if empty
+npm run db:init     # create or migrate the Neon schema, seeds if empty
 npm run dev         # astro dev with HMR, reads .dev.vars
 ```
 
-Secrets are read from the **Workers runtime env** per request (`locals.runtime.env`), never `process.env` at module load. That means two files locally:
+Secrets are read per request from the Workers runtime env (`locals.runtime.env`), never from `process.env` at module load. That means two files locally:
 
-- **`.dev.vars`** — what the app reads in dev and preview (exposed via `platformProxy`)
-- **`.env`** — mirrors the same values for the plain-Node `db:init` script
+* `.dev.vars` is what the app reads in dev and preview, exposed through `platformProxy`.
+* `.env` mirrors the same values for the plain Node `db:init` script.
 
 Both are gitignored. Required keys:
 
@@ -141,7 +131,7 @@ PUSHER_SECRET=…
 PUSHER_CLUSTER=ap2
 ```
 
-In production these live as Cloudflare Pages secrets:
+In production these are Cloudflare Pages secrets:
 
 ```bash
 wrangler pages secret put NEON_DB --project-name habitrack
@@ -152,28 +142,24 @@ wrangler pages secret put NEON_DB --project-name habitrack
 | | |
 |---|---|
 | `npm run dev` | Astro dev server with HMR |
-| `npm run db:init` | Create/upgrade the Neon schema (idempotent — safe to re-run) |
+| `npm run db:init` | Create or upgrade the Neon schema, safe to re-run |
 | `npm run build` | Build to `dist/` |
-| `npm run preview` | `wrangler pages dev dist` — the real Workers runtime, locally |
+| `npm run preview` | `wrangler pages dev dist`, the real Workers runtime locally |
 | `npm run deploy` | Build and deploy to Cloudflare Pages |
 
-Re-run `db:init` after any schema change; every statement is `ALTER … IF NOT EXISTS` and backward-compatible.
+Re-run `db:init` after any schema change. Every statement is `ALTER … IF NOT EXISTS` and backward compatible.
 
----
+## Gotchas
 
-## Notes from the field
+Each of these cost real debugging time and is easy to undo by accident.
 
-Things that cost real debugging time and are easy to undo by accident:
-
-- **`compute.js` used to be `analytics.js`.** Ad and privacy blockers block any file with `analytics` in the name, which broke the app for anyone running one. Don't rename it back.
-- **The service worker never caches app HTML.** The app is server-rendered, auth-gated and realtime, and caching HTML broke reopen twice over: stale markup pointing at hashed `/_astro` assets that 404 after a deploy, and *"a redirected response was used…"* errors when a signed-out `/` (302) got cached for a navigation. Navigations go to the network; only a static offline page is cached. Bump the `CACHE` version when editing `sw.js`.
-- **Preact won't re-apply `dangerouslySetInnerHTML` when the `__html` string is unchanged between renders.** The SSR markup sticks even after a later render computes new HTML. For computed innerHTML, set it through a `ref` + `useEffect` on the data dependency.
-- **Per-habit colours are inline hex, never dynamic class names** — Tailwind can't see classes it doesn't find in source.
-- **Dates are local `YYYY-MM-DD`** via `iso()`/`addDays()`. `toISOString()` on a raw date is a UTC off-by-one waiting to happen.
-- **Each Neon call is a separate HTTP round trip.** Awaiting queries in sequence shows up directly in time-to-first-byte; fire independent ones with `Promise.all`, and don't re-verify a token the middleware already verified.
-- **Astro CSRF-blocks non-GET requests without a matching `Origin`.** Browsers always send it; `curl` tests need `-H "Origin: <base>"`.
-
----
+* **`compute.js` was once called `analytics.js`.** Ad and privacy blockers block any file with `analytics` in the name, which broke the app for anyone running one. Don't rename it back.
+* **The service worker never caches app HTML.** The app is server-rendered, auth-gated and realtime, and caching HTML broke reopen twice: stale markup pointing at hashed `/_astro` assets that 404 after a deploy, and *"a redirected response was used…"* errors when a signed-out `/` redirect got cached for a navigation. Navigations go to the network and only a static offline page is cached. Bump the `CACHE` version when editing `sw.js`.
+* **Preact skips `dangerouslySetInnerHTML` when the `__html` string hasn't changed** between renders, so SSR markup sticks even after a later render computes new HTML. Set computed innerHTML through a `ref` and `useEffect` on the data dependency instead.
+* **Per-habit colors are inline hex, never dynamic class names.** Tailwind can't see classes that don't appear literally in source.
+* **Dates are local `YYYY-MM-DD`** via `iso()` and `addDays()`. Calling `toISOString()` on a raw date gives you a UTC off-by-one.
+* **Every Neon call is a separate HTTP round trip.** Sequential awaits show up directly in time-to-first-byte. Use `Promise.all` for independent queries, and don't re-verify a token the middleware already verified.
+* **Astro blocks non-GET requests without a matching `Origin` header.** Browsers always send it; `curl` tests need `-H "Origin: <base>"`.
 
 ## Licence
 
