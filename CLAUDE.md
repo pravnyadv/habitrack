@@ -20,7 +20,8 @@ A personal habit tracker — a cleaner take on [beaverhabits](https://github.com
 ```
 src/
   pages/
-    index.astro          # main app (vanilla): habit list, calendar, realtime. SSRs own habits (no flash)
+    index.astro          # main app (vanilla): Habits/Streaks tabs, list, calendar, realtime,
+                         # two-track Today card, emoji picker. SSRs own habits (no flash)
     overview.astro       # redirect → /profile (kept for old links)
     profile/
       index.astro        # /profile = Overview tab (SSR own habits → <Overview client:load>); unauthed → /switch
@@ -94,6 +95,8 @@ Profile creation is **open** (anyone with the URL). The first/default profile (`
 
 **Session = httpOnly cookie + server-side gate (no client-auth flicker).** Login/create set an httpOnly `habitrack_token` cookie (`sessionCookieOpts`, `secure` in prod) in addition to returning the token. `src/middleware.js` gates `/` and `/overview`: it verifies the cookie and **302s to `/profile` before any HTML is sent** if there's no valid session — so a signed-out visit never paints the app. `authedProfile(request, env)` reads the token from the `Authorization` header *or* the cookie, so same-origin fetches authenticate on the cookie alone. `/api/logout` clears it. `verifyToken(token, env)` is the shared check (HMAC + expiry + `token_version`).
 
+**Gated pages read `Astro.locals.profileId`, they do not re-verify.** After a successful check the middleware stashes the id on `context.locals.profileId`, and `index.astro` / `manage.astro` use that instead of calling `verifyToken` again. Each `verifyToken` costs a Neon round trip for the `token_version` read, so re-verifying doubled the page's time-to-first-byte for no benefit. `locals.profileId` is only ever set after verification succeeds; ungated pages (`/profile`, `/profile/switch`) still verify for themselves.
+
 **Token revocation (`token_version`).** Tokens embed a `token_version` inside the signed payload (`<profileId>.<exp>.<version>.<hmac>`); `verifyToken` confirms it still matches `profiles.token_version` (one indexed PK read) — so a token can be invalidated server-side. **Changing a passcode bumps the version**, revoking every previously-issued token, then re-issues a fresh token+cookie for the current session (the PATCH response carries the new `token`; `Manage` stores it). Deleting a profile also kills its tokens (the row is gone → version read returns null). Legacy pre-versioning 3-part tokens are treated as version 0, so they stay valid until the next passcode change. The DB read fails **closed** (a DB error → unauthenticated, never a 500 out of the gate). Logout still only clears the cookie (per-device); it does not bump the version.
 
 **PWA / Safari cookie loss → session restore.** Installed PWAs (iOS standalone especially) and Safari ITP can drop the httpOnly cookie while **localStorage keeps the token** — so the middleware gate 302s `/` → `/profile` even though the client is "logged in", stranding the user on the picker. Fix: `POST /api/session` re-issues the cookie from a valid `Authorization: Bearer` token (no DB). The logged-out `Switch` picker (`me=null`) checks for a localStorage token on mount and, if present, calls `/api/session` and goes to `/` (shows "Restoring your session…"); a stale token clears localStorage and falls back to the picker. **Realtime is unaffected** — Pusher uses public channels (`habitrack-<profileId>`) with just the public key+cluster (no authorizer, no cookie), and all client API calls authenticate via the Bearer header, so only the server-side navigation gate ever depended on the cookie.
@@ -113,14 +116,33 @@ Profile creation is **open** (anyone with the URL). The first/default profile (`
 ## Data model
 
 - `profiles (id, name, passcode_hash, is_admin, failed_attempts, locked_until, last_active_at, created_at)`
-- `habits (id, profile_id → profiles ON DELETE CASCADE, name, emoji, color, sort_order, schedule TEXT, created_at)`
+- `habits (id, profile_id → profiles ON DELETE CASCADE, name, emoji, color, sort_order, schedule TEXT, kind TEXT, start_date DATE, created_at)`
   - `schedule` = CSV of JS weekday numbers (`0`=Sun … `6`=Sat), default `0,1,2,3,4,5,6`.
+  - `kind` = `'normal'` (build a habit) or `'streak'` (quit/abstain). Default `'normal'`. See "Habit kinds" below.
+  - `start_date` = when tracking began, backdated at create time. Nullable; falls back to the created date.
 - `checkins (id, habit_id → habits ON DELETE CASCADE, day DATE, UNIQUE(habit_id, day))`
 - `profile_shares (id, owner_id → profiles, viewer_id → profiles, created_at, accepted_at, UNIQUE(owner_id, viewer_id))` — owner invites viewer to read-only access; `accepted_at` NULL = pending. Both FKs `ON DELETE CASCADE`.
 
 Stats/streaks/heatmaps are computed **client-side** from each habit's `days` array. Non-scheduled days are "rest days" (not counted; streaks skip them). "Active from" = earlier of a habit's created date / first check-in — days before that are never "missed". See `compute.js`.
 
 **Backfill window.** A check-in can be marked/unmarked for today and the recent past, capped by `BACKFILL_DAYS` (in `compute.js`, currently 7) — change that one constant to widen/narrow it. The week strip renders markable days as a hollow ring (◯ = tap to complete), done days as a ✓ in the habit color, and days older than the window as a faint locked ✕; the month calendar makes older days inert `<div>`s (view-only history). `/api/checkins` re-checks the window server-side (coarse UTC guard with ±1 day of timezone slack) so it holds outside the UI.
+
+## Habit kinds (normal vs streak)
+
+Two tracker types share one `habits` table and one `checkins` table, with **opposite meanings for a checkin row**. Get this backwards and the stats invert silently.
+
+- **`normal`** (build a habit): a `checkins` row means **done**. Absence on a scheduled day means missed.
+- **`streak`** (quit/abstain): a `checkins` row means **slipped**. Every other day from `start_date` to today is clean by default, so the streak accrues with no daily interaction. That is the point of the kind: quitting something needs zero taps on a good day.
+
+Consequences worth remembering:
+
+- **Streak habits have no rest days.** `/api/habits` forces `schedule` to all seven days when `kind === 'streak'` (`habits.js:53`), because "not scheduled today" is meaningless for abstaining.
+- **A slip logged for today is graced**, not counted, in `streakStats()`. The day is not over, which mirrors how normal-habit streaks treat today.
+- **`startOf(habit)`** is `start_date` when set, else the created date. Days before it are never counted for either kind.
+- **Creating a `normal` habit with a backdated `startDate` backfills check-ins** for every scheduled day from that date to today (`habits.js:69`), so an existing streak carries over. Creating a `streak` habit backfills nothing, since no rows means clean.
+- `compute.js` exports `isStreak()`, `startOf()`, `streakStats()` and `streakGraph()`. `stats()` dispatches on kind, so call it rather than branching at the call site.
+
+The app UI splits the two with a **kind switcher** (`#kind-tabs`) above the list. The active tab also decides what the `+` button creates. The Today card is **two-track**: one ring for habits due today, one for quits still clean today, each rendered only if that track has anything to show.
 
 ## Realtime
 
@@ -156,3 +178,6 @@ npm run deploy     # build + deploy to Cloudflare Pages (Praveen account, pinned
 - Deploys target the **Praveen** Cloudflare account. Never deploy to Masa.
 - After schema changes, re-run `npm run db:init` (all `ALTER … IF NOT EXISTS`, backward-compatible).
 - **Preact won't re-apply `dangerouslySetInnerHTML` after hydration when the `__html` string is unchanged between renders** — the SSR markup sticks even though a later render computed new HTML (this is why the Overview heatmap stayed at the stale `0`/empty snapshot until toggling a chip changed the string). For imperative/computed innerHTML, set it via a `ref` + `useEffect` on the data dep (e.g. `heatRef.current.innerHTML = agg.heat` on `[agg]`), don't rely on `dangerouslySetInnerHTML` alone.
+- **Every Neon call is one HTTP round trip**, so sequential `await`s land directly in time-to-first-byte. Fire independent queries with `Promise.all`, and never re-run a check the middleware already did. Measured on the gated pages: 4 serial round trips to 2 took `/` from 286ms to 146ms.
+- **Form controls need a 16px font floor on touch** (`global.css:38`). iOS Safari auto-zooms when a focused control is smaller and never zooms back out. Don't set `text-sm` on an `<input>` without checking that rule still covers it.
+- The emoji picker (`EMOJIS` in `index.astro`) is a `[emoji, keywords]` array filtered by a search box. Adding an emoji means adding its keywords too, or it becomes unsearchable.
