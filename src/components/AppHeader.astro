@@ -1,7 +1,9 @@
 ---
 // Shared top header used by the main app AND the /profile pages, so both feel
-// like one app. Left: 🦫 logo (links home) + date + account chip (online + name
+// like one app. Left: logo (links home) + date + account chip (online + name
 // + dropdown menu). Right: page-specific actions (slot) + theme toggle.
+// The logo is the ring+check mark from public/icon.svg, inlined so the header
+// paints without a second request. It is a drawn mark, not an emoji.
 //   showAdd:      render the "＋ new habit" button (main app only; wired by index)
 //   showOverview: render the Overview quick-link
 //   showHabits:   render the "← Habits" back-to-app link (profile hub only)
