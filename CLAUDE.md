@@ -31,6 +31,9 @@ src/
       create.astro       # SSR profiles (dup check) → <Create client:load>
       manage.astro       # SSR me+profiles+shares+presence → <Manage client:load> (auth-gated)
       demo.astro         # PUBLIC demo: SSRs the hardcoded seed → <HabitApp mode="demo"> (no DB, no auth)
+      demo/
+        overview.astro   # PUBLIC demo Overview: SSRs the seed → <Overview mode="demo">, then the
+                         # island swaps in the visitor's localStorage sandbox (no DB, no auth)
       stats.astro        # admin-only demo traffic (gated + is_admin check); plain Astro, no island
                          # (the "Demo stats" hub tab, tab="stats")
       overview.astro     # redirect → /profile
@@ -39,17 +42,23 @@ src/
                          # Overview/Manage/Switch, plus "Demo stats" when `admin`. Every
                          # tabbed page passes `admin` so the nav doesn't change shape between
                          # tabs and non-admins never see a tab that just redirects them.
+                         # `mode="demo"` (demo/overview only) stamps <html data-mode>, points
+                         # Back at /profile/demo, and flips robots to index,follow.
   components/
     AppHeader.astro      # THE shared header (index + all /profile pages): 🦫 logo→home, date, account
                          # chip + dropdown menu (Overview/Manage/Switch/Log out), theme toggle, and one
                          # self-contained <script> owning chip menu + theme + presence heartbeat + admin
                          # online badge. `showAdd`/`showOverview` props add the app-only buttons;
                          # `showSignIn` swaps them for a Sign in link (public view, no session).
+                         # `overviewHref`/`habitsHref` retarget those two links, which is how the
+                         # demo reaches its own Overview and its own home instead of /profile and /.
     HabitApp.astro       # THE whole app body (vanilla JS): Habits/Streaks tabs, list, calendar,
                          # realtime, two-track Today card, emoji picker, add buttons. Rendered by
                          # index.astro, p/[id].astro AND profile/demo.astro; one `mode` prop
                          # ('app'|'public'|'demo') picks the surface, also stamped on <html data-mode>
-    Overview.jsx         # Preact: aggregate stats + heatmap + CSV/JSON export (SSR habits via props)
+    Overview.jsx         # Preact: aggregate stats + heatmap + CSV/JSON export (SSR habits via props).
+                         # `mode="demo"` reads the localStorage sandbox instead of the API and
+                         # skips realtime, which is how /profile/demo/overview reuses this island.
     profile/
       ui.jsx             # shared classes, icons, presence(), <Msg>, <Confirm>
       Login.jsx Create.jsx Switch.jsx Manage.jsx   # focused Preact islands, one per route
@@ -129,6 +138,10 @@ Profile creation is **open** (anyone with the URL). The first/default profile (`
 
 **The demo (`/profile/demo`) is writable but never touches the database.** It's the link to hand strangers. `lib/demo.js` holds a **hardcoded** seed (8 habits/quits) generated relative to today, so streaks stay current and it can't go stale or empty. Deliberately *not* sourced from a real profile: that would mean curating a prod profile forever, and letting visitors write to it would mean cleaning up after them. The page SSRs the seed into `#initial-habits`; the client forks it into `localStorage.habitrack_demo` and **`api()` is swapped for `demoApi()`**, which answers every endpoint locally with the same `{ok,status,data}` shape. So add/edit/delete/reorder/check-in all work for a visitor with no session and no writes. Realtime is off (no server-side profile to watch). Three things to keep in mind when touching this. **The habit-derivation rules are shared, not copied**: `normalizeSchedule`, `resolveStartDate` and `scheduledDays` live in `compute.js` and are called by both `api/habits.js` and `demoApi`. An earlier copy in `demoApi` had already drifted (it returned `schedule` as an array where the real endpoint returns CSV, which broke `schedOf` after a demo edit). **The sandbox is persisted by an explicit `persist()` at the five mutation sites**, not from `render()`, because `render()` also runs for pure UI (expanding a card, paging the calendar, switching tabs) and persisting there re-stringified every habit and hit localStorage synchronously on each of those. **`#initial-state` keeps the pristine seed** in the DOM, which is what Reset restores. Everything except `GET /api/habits`, `POST /api/habits` and PATCH is applied optimistically by the caller, so `demoApi` only needs to acknowledge it.
 
+**The demo has its own Overview at `/profile/demo/overview`.** Without it a stranger could use the app but never reach the stats screen, since `showOverview` was app-only and `/profile` is auth-gated. It renders the **same `Overview.jsx` island** as the signed-in tab, switched by `mode="demo"`: the island reads `loadDemo()` instead of `GET /api/habits`, and binds no realtime (there is no server-side profile to have a channel). The page SSRs the pristine seed so it paints with content and a crawler sees it, then the island swaps in the sandbox on mount, so a visitor who edited their demo sees a brief correction rather than the seed's numbers. Two links had to become configurable for this: `AppHeader`'s `overviewHref` (so the demo's Overview button goes to its own copy, not `/profile`) and `habitsHref` (so Back from the demo overview goes to `/profile/demo`, not `/`). Both default to the old hardcoded values, so nothing else moved. `ProfileLayout` gained `mode`, which stamps `data-mode` for the same reason `HabitApp` does, and which also makes the page indexable, since it is part of the demo surface.
+
+**The demo header shows Overview and not Sign in** (`showSignIn={mode === 'public'}`). The header's action row fits three items at 390px, and a fourth pushes it over, which is the overflow `da8f891` already fixed once. Sign in is the right one to drop: it exists so the owner of a **public profile** can reach their passcode screen, and a demo has no owner. The 🦫 logo still links to `/`, which sends a signed-out visitor to the picker, so the path to an account is not lost. Adding anything else to that row means removing something first.
+
 **Demo traffic counting.** `demo_visits (visitor_id, created_at)`, one row per visit. Identity is a `crypto.randomUUID()` in `localStorage.habitrack_demo_visitor` (no login, no IP, no fingerprint), so "unique visitors" means "browsers that kept the id". `POST /api/demo-visit` is necessarily public (the demo has no session); it charset/length-checks the id and swallows insert errors so analytics can never break the demo. One POST per tab session (`sessionStorage`), so reloads don't inflate counts. `/profile/stats` (admin-only) shows totals, a 30-day bar breakdown, and per-visitor last-seen.
 
 **`HabitApp.astro` is the app body; three routes render it, distinguished by ONE `mode` prop** (`'app' | 'public' | 'demo'`) so there are no illegal combinations and each branch reads the mode instead of re-deriving it from a pile of booleans. `index.astro`, `p/[id].astro` and `profile/demo.astro` each SSR their own data and hand it to the same component, so the three surfaces can't drift apart. The whole starting state (`{mode, habits, profile, viewing}`) travels in **one** `<script id="initial-state" type="application/json">` and is decoded once; `mode` is also stamped on `<html data-mode>` because `AppHeader` has its own script that would otherwise re-derive the surface from localStorage and disagree (a signed-in visitor on `/p/<id>` would get their account chip *and* a Sign in button, and would heartbeat from a page that isn't their app). The client reads `habitrack_viewing` from localStorage only when the SSR state has no `viewing`. In a public view `boot()` renders the SSR'd habits immediately (they already belong to the viewed profile, so no fetch), realtime still binds (Pusher channels are public), the read-only banner is **SSR'd visible** so a public link never flashes as if it were your own app, and the iOS install hint is suppressed. `AppHeader` gets `showAdd={false}`, so anything touching `#add-btn` must stay null-safe. Read-only chrome is applied **once in `enterApp()`** (keyed on `readOnly()`), not per render: `viewing` can't change without a reload, and `render()` runs on every check-in.
@@ -194,7 +207,7 @@ On any check-in / add / delete / edit (`update`) / reorder, the endpoint calls `
 
 `public/manifest.webmanifest` + icons + `public/sw.js` make it installable. iOS install is Share → Add to Home Screen (the `#ios-install` hint banner); no in-app install button (rely on the browser's own install control).
 
-**Search visibility: only `/profile/demo` is indexable.** `robots.txt` disallows everything and then allows that one path, and `HabitApp.astro` emits `index, follow` for `mode === 'demo'` and `noindex, nofollow` for everything else. The two have to agree, so change both or neither. The reasoning: the app is a signed-in surface, and public profiles at `/p/<id>` are "anyone with the link", which is not the same as consenting to be indexed. The demo is hardcoded sample data with no session and nothing real to leak, and it is the link worth being findable. The demo also carries its own `<meta name="description">` for the same reason.
+**Search visibility: only the demo is indexable.** `robots.txt` disallows everything and then allows `/profile/demo`, which by prefix also covers `/profile/demo/overview`. `HabitApp.astro` and `ProfileLayout.astro` both emit `index, follow` for `mode === 'demo'` and `noindex, nofollow` otherwise. All three have to agree, so change them together or not at all. The reasoning: the app is a signed-in surface, and public profiles at `/p/<id>` are "anyone with the link", which is not the same as consenting to be indexed. The demo is hardcoded sample data with no session and nothing real to leak, and it is the link worth being findable. The demo also carries its own `<meta name="description">` for the same reason.
 
 **iOS launch images (`public/splash/`, generated).** An installed iOS web app shows a blank **white** screen for the entire cold start unless it is handed an `apple-touch-startup-image` matching the device exactly; every other platform derives one from the manifest. `npm run splash` (`scripts/gen-splash.mjs`) owns a device table and emits both the PNGs and `src/components/SplashLinks.astro`, so the images and their media queries cannot drift. Add new hardware to `DEVICES` and re-run; output is byte-deterministic, so re-running never churns the diff. `SplashLinks` is included by `HabitApp.astro` **and** `ProfileLayout.astro`, since a launch can resume on any page.
 
