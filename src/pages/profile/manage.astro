@@ -17,7 +17,7 @@ const [p, profiles, shared] = await Promise.all([
   listShareViewers(sql, pid),
 ]);
 if (!p) return Astro.redirect('/profile');
-const me = { id: p.id, name: p.name, admin: !!p.is_admin };
+const me = { id: p.id, name: p.name, admin: !!p.is_admin, isPublic: !!p.is_public };
 
 let presence = null;
 if (me.admin) {
@@ -26,6 +26,6 @@ if (me.admin) {
 }
 ---
 
-<ProfileLayout pageTitle="Manage profile — Habitrack" heading="Profile" tab="manage" backHref="/">
-  <Manage client:load me={me} profiles={profiles} shares={{ shared }} presence={presence} />
+<ProfileLayout pageTitle="Manage profile — Habitrack" heading="Profile" tab="manage" admin={me.admin} backHref="/">
+  <Manage client:load me={me} origin={Astro.url.origin} profiles={profiles} shares={{ shared }} presence={presence} />
 </ProfileLayout>

@@ -27,6 +27,7 @@ if (pid) {
   pageTitle="Switch profile — Habitrack"
   heading={pid ? 'Profile' : 'Switch profile'}
   tab={pid ? 'switch' : undefined}
+  admin={!!me?.admin}
   backHref={pid ? '/' : undefined}>
   <Switch client:load profiles={profiles} me={me} shares={shares} />
 </ProfileLayout>

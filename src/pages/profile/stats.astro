@@ -1,0 +1,94 @@
+---
+import ProfileLayout from '../../layouts/ProfileLayout.astro';
+import { CARD } from '../../components/profile/ui.jsx';
+import { timeAgo } from '../../lib/compute.js';
+import { getSql, getProfile, demoVisitTotals, demoVisitsByDay, demoVisitors } from '../../lib/db.js';
+
+// Admin-only demo traffic. Middleware gates this route and hands over the verified
+// id; the admin check happens here because middleware doesn't read the profile row.
+const env = Astro.locals.runtime?.env;
+const pid = Astro.locals.profileId;
+if (!pid) return Astro.redirect('/profile');
+
+// All four reads go out together — each Neon call is its own HTTP round trip, and
+// awaiting the admin check first would put the other three a generation behind it.
+// A non-admin pays three wasted queries, which beats every admin load paying the
+// extra latency.
+const sql = getSql(env);
+const [me, totals, byDay, visitors] = await Promise.all([
+  getProfile(sql, pid),
+  demoVisitTotals(sql),
+  demoVisitsByDay(sql, 30),
+  demoVisitors(sql, 50),
+]);
+if (!me?.is_admin) return Astro.redirect('/profile');
+
+const fmt = (ts) => (ts ? new Date(ts).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
+const day = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+const peak = Math.max(1, ...byDay.map((d) => d.visits));
+const TILE = 'rounded-xl bg-slate-50 px-3 py-2.5 text-center dark:bg-slate-800/50';
+const ROW = 'flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/50';
+// [value, label, isCount] — counts render big, timestamps render small.
+const TILES = [
+  [totals.visitors, 'Unique visitors', true],
+  [totals.visits, 'Total visits', true],
+  [fmt(totals.first_visit), 'First visit', false],
+  [fmt(totals.last_visit), 'Last visit', false],
+];
+---
+
+<ProfileLayout pageTitle="Demo stats — Habitrack" tab="stats" admin backHref="/">
+  <div class="flex flex-col gap-4">
+    <div class={CARD}>
+      <p class="text-sm font-semibold">Demo traffic</p>
+      <p class="mt-0.5 text-xs text-slate-400">
+        Visits to <a href="/profile/demo" class="font-medium text-emerald-600 hover:underline dark:text-emerald-400">/profile/demo</a>.
+        A visitor is a browser holding a random local id — no login, no IP, no fingerprint. Counted once per tab session.
+      </p>
+      <div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {TILES.map(([value, label, isCount]) => (
+          <div class={TILE}>
+            <div class={isCount ? 'text-lg font-bold tabular-nums' : 'text-xs font-semibold'}>{value}</div>
+            <div class="text-[11px] font-medium text-slate-500 dark:text-slate-400">{label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div class={CARD}>
+      <p class="mb-3 text-sm font-semibold">Last 30 days</p>
+      {byDay.length ? (
+        <div class="flex flex-col gap-1.5">
+          {byDay.map((d) => (
+            <div class="flex items-center gap-3 text-sm">
+              <span class="w-28 shrink-0 text-xs text-slate-500 dark:text-slate-400">{day(d.day)}</span>
+              <span class="h-4 min-w-[2px] rounded-sm bg-emerald-500" style={`width:${(d.visits / peak) * 100}%`}></span>
+              <span class="shrink-0 text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                {d.visits} {d.visits === 1 ? 'visit' : 'visits'} · {d.visitors} {d.visitors === 1 ? 'person' : 'people'}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p class="text-xs text-slate-400">No demo visits in the last 30 days.</p>
+      )}
+    </div>
+
+    <div class={CARD}>
+      <p class="mb-3 text-sm font-semibold">Visitors</p>
+      {visitors.length ? (
+        <div class="flex flex-col gap-1.5">
+          {visitors.map((v) => (
+            <div class={ROW}>
+              <span class="min-w-0 flex-1 truncate font-mono text-xs text-slate-500 dark:text-slate-400">{v.visitor_id.slice(0, 8)}</span>
+              <span class="shrink-0 text-xs tabular-nums text-slate-500 dark:text-slate-400">{v.visits}×</span>
+              <span class="shrink-0 text-[11px] text-slate-400">{timeAgo(v.last_seen)}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p class="text-xs text-slate-400">No one has opened the demo yet.</p>
+      )}
+    </div>
+  </div>
+</ProfileLayout>

@@ -35,6 +35,41 @@ export const addDays = (isoStr, n) => {
 export const dow = (isoStr) => new Date(isoStr + 'T00:00:00').getDay();
 export const schedOf = (h) => new Set((h.schedule || '0,1,2,3,4,5,6').split(',').map(Number));
 
+// ---- habit creation rules (shared by the API and the demo sandbox) ---------
+// These three encode what a new habit's schedule/start/backfill must be. The
+// server (api/habits.js) and the demo's local stand-in (lib/demo.js) both derive
+// habits, so the rules live here — duplicating them let the two drift silently.
+export const DAILY = [0, 1, 2, 3, 4, 5, 6];
+const MAX_BACKDATE_DAYS = 366 * 3;
+
+// Weekday numbers a new habit is scheduled on. Junk is dropped, and a streak
+// (quit/abstain) is always daily — "not scheduled today" is meaningless for it.
+export function normalizeSchedule(input, kind) {
+  if (kind === 'streak') return [...DAILY];
+  const clean = Array.isArray(input)
+    ? [...new Set(input.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))].sort()
+    : [];
+  return clean.length ? clean : [...DAILY];
+}
+
+// A backdated start date, or null when absent/invalid. Capped ~3 years back so a
+// typo can't backfill thousands of days.
+export function resolveStartDate(raw, today) {
+  const s = String(raw || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  if (s > today || s < addDays(today, -MAX_BACKDATE_DAYS)) return null;
+  return s;
+}
+
+// Every scheduled day in [from, to] — the days a backdated normal habit gets
+// check-ins for, and the days the demo seed walks.
+export function scheduledDays(from, to, sched) {
+  const set = sched instanceof Set ? sched : new Set(sched);
+  const out = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) if (set.has(dow(d))) out.push(d);
+  return out;
+}
+
 // A habit is "active" from the earlier of its created date or first check-in
 // (backfilled check-ins prove it was already being tracked). Mirror this
 // everywhere "missed vs before-created" matters.

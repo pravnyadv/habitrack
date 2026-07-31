@@ -1,0 +1,25 @@
+---
+import HabitApp from '../../components/HabitApp.astro';
+import { getSql, getPublicProfile, listHabits } from '../../lib/db.js';
+
+// A public profile, readable by anyone with no session (that's the whole point).
+// Not in middleware's GATED set, so no cookie is required to get here.
+//
+// Both reads fire in parallel — each Neon call is its own HTTP round trip. Loading
+// habits for a profile that turns out to be private is harmless: we never send
+// them, we redirect instead.
+const id = Number(Astro.params.id);
+if (!Number.isInteger(id)) return Astro.redirect('/profile');
+
+const sql = getSql(Astro.locals.runtime?.env);
+const [profile, habits] = await Promise.all([getPublicProfile(sql, id), listHabits(sql, id)]);
+
+// Private or nonexistent both land here, so this page can't be used to discover
+// which ids exist.
+if (!profile) return Astro.redirect('/profile/switch');
+---
+
+<HabitApp
+  mode="public"
+  initialHabits={habits}
+  viewing={{ id: profile.id, name: profile.name }} />

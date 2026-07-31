@@ -3,9 +3,11 @@ import { verifyToken, TOKEN_COOKIE } from './lib/auth.js';
 
 // Server-side auth gate: app routes require a valid session cookie, else we
 // redirect to /profile *before any HTML is sent* (no client-side flash).
-// The /profile/{switch,login,create} pages are public (they ARE the gate);
-// API routes self-authenticate.
-const GATED = new Set(['/', '/profile/manage']);
+// The /profile/{switch,login,create} pages are public (they ARE the gate), and so
+// are /profile/demo and /p/<id> by design; API routes self-authenticate.
+// /profile/stats additionally checks is_admin in the page (middleware doesn't read
+// the profile row).
+const GATED = new Set(['/', '/profile/manage', '/profile/stats']);
 
 export const onRequest = defineMiddleware(async (context, next) => {
   if (GATED.has(context.url.pathname)) {

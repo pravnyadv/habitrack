@@ -2,8 +2,9 @@ import { useState } from 'preact/hooks';
 import { apiFetch } from '../../lib/compute.js';
 import { TK, PID, VIEW, CARD, FIELD, SECONDARY, presence, Msg, Confirm, go } from './ui.jsx';
 
-// props: me={id,name,admin}, profiles=[{id,name}], shares={shared:[]}, presence=null|{online,profiles}
-export default function Manage({ me, profiles = [], shares: initialShares = { shared: [] }, presence: presenceData = null }) {
+// props: me={id,name,admin,isPublic}, origin (for the public link), profiles=[{id,name}],
+//        shares={shared:[]}, presence=null|{online,profiles}
+export default function Manage({ me, origin = '', profiles = [], shares: initialShares = { shared: [] }, presence: presenceData = null }) {
   const [shared, setShared] = useState(initialShares.shared || []);
   const [rename, setRename] = useState(me?.name || '');
   const [curPass, setCurPass] = useState('');
@@ -12,7 +13,13 @@ export default function Manage({ me, profiles = [], shares: initialShares = { sh
   const [passMsg, setPassMsg] = useState(null);
   const [shareSel, setShareSel] = useState('');
   const [shareMsg, setShareMsg] = useState(null);
+  const [isPublic, setIsPublic] = useState(!!me?.isPublic);
+  const [pubMsg, setPubMsg] = useState(null);
   const [confirm, setConfirm] = useState(null);
+
+  // `origin` is passed in from the SSR page, so the link renders identically on the
+  // server and after hydration (no effect, no second render, no blank first paint).
+  const publicUrl = `${origin}/p/${me.id}`;
 
   const sharedIds = new Set(shared.map((v) => v.id));
   const options = profiles.filter((p) => p.id !== me.id && !sharedIds.has(p.id));
@@ -37,6 +44,31 @@ export default function Manage({ me, profiles = [], shares: initialShares = { sh
     // for this session — keep the localStorage copy in sync so we stay signed in.
     if (data && data.token) localStorage.setItem(TK, data.token);
     setCurPass(''); setNewPass(''); setPassMsg({ text: 'Passcode changed.', ok: true });
+  }
+  async function setPublic(next) {
+    const { ok, data } = await apiFetch('/api/profiles/' + me.id, { method: 'PATCH', body: { isPublic: next } });
+    if (!ok) { setPubMsg({ text: (data && data.error) || 'Could not change visibility.', ok: false }); return; }
+    setIsPublic(next);
+    setPubMsg({ text: next ? 'Profile is public.' : 'Profile is private again.', ok: true });
+  }
+  // Visibility is a privacy change in both directions, so every flip is confirmed
+  // before anything is sent.
+  function togglePublic() {
+    const next = !isPublic;
+    setConfirm({
+      text: next
+        ? 'Make this profile public? Anyone can open it from the profile picker and read your habits and check-ins. No one can edit anything, and you can switch back any time.'
+        : 'Make this profile private again? Its public link stops working and it goes back to showing as Private in the profile picker.',
+      okLabel: next ? 'Make public' : 'Make private',
+      danger: false,
+      onYes: () => setPublic(next),
+    });
+  }
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setPubMsg({ text: 'Link copied.', ok: true });
+    } catch { setPubMsg({ text: publicUrl, ok: true }); }
   }
   async function addShare() {
     const viewerId = Number(shareSel);
@@ -77,6 +109,37 @@ export default function Manage({ me, profiles = [], shares: initialShares = { sh
       </div>
 
       <div class={CARD}>
+        {/* The whole row is the switch — a 24x44 track is a small target, and only
+            spans go inside (a <p> in a <button> is invalid HTML and browsers
+            restructure it, which breaks Preact hydration). */}
+        <button type="button" role="switch" aria-checked={isPublic} onClick={togglePublic}
+          class="flex w-full items-start justify-between gap-3 text-left">
+          <span class="min-w-0">
+            <span class="block text-sm font-semibold">Public profile</span>
+            <span class="mt-0.5 block text-xs text-slate-400">
+              {isPublic
+                ? 'Anyone can open this profile from the picker and read it. They can’t edit anything.'
+                : 'Only you can see this profile. Turn this on to let anyone read it, no passcode.'}
+            </span>
+          </span>
+          <span aria-hidden="true"
+            class={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition ${isPublic ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`}>
+            <span class={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${isPublic ? 'left-[22px]' : 'left-0.5'}`}></span>
+          </span>
+        </button>
+        {isPublic && (
+          <div class="mt-3 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/50">
+            <span class="min-w-0 flex-1 truncate font-mono text-xs text-slate-500 dark:text-slate-400">{publicUrl}</span>
+            <button type="button" onClick={copyLink} class="shrink-0 rounded-lg bg-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600">Copy</button>
+          </div>
+        )}
+        <Msg m={pubMsg} />
+      </div>
+
+      {/* Sharing is how you give ONE person read access. A public profile already
+          gives everyone that, so the section is meaningless while it's on. */}
+      {!isPublic && (
+      <div class={CARD}>
         <p class="text-sm font-semibold">Share (view-only)</p>
         <p class="mb-3 mt-0.5 text-xs text-slate-400">Let someone follow your habits for accountability. They'll see, never edit.</p>
         <div class="flex gap-2">
@@ -97,6 +160,7 @@ export default function Manage({ me, profiles = [], shares: initialShares = { sh
           )) : <p class="text-xs text-slate-400">Not shared with anyone yet.</p>}
         </div>
       </div>
+      )}
 
       {me.admin && presenceData && (
         <div class={CARD}>

@@ -4,6 +4,8 @@ A personal habit tracker, built as a cleaner take on [beaverhabits](https://gith
 
 **Live:** https://habitrack-6yj.pages.dev
 
+**Try the demo:** https://habitrack-6yj.pages.dev/profile/demo. No signup, no login. It loads sample habits and the whole app works: add, edit, delete, reorder, check in. Your changes are kept in your browser's localStorage and never reach the server, so you can't touch anyone's real data. Reset puts the sample data back.
+
 ## Features
 
 **Two tracker types.** A *habit* is checked off on each scheduled day. A *streak* works in reverse: it's for quitting things, so every day counts as clean from the start date and you only log the days you slipped. A quit streak grows without any daily input. Slips logged for today are graced instead of counted, since the day isn't over.
@@ -13,6 +15,8 @@ A personal habit tracker, built as a cleaner take on [beaverhabits](https://gith
 **Multiple profiles.** Each profile has its own passcode and habits. Anyone with the URL can create one. The first profile is admin and can manage the others.
 
 **View-only sharing.** You can invite another profile to watch your data for accountability. The recipient has to accept, and access is strictly read-only: mutating endpoints ignore the `?profile=` parameter entirely, so a viewer has no way to write.
+
+**Public profiles.** A profile can opt into being readable by anyone at `/p/<id>`, with no login at all. The profile picker badges each row Private or Public, and public rows open straight into a read-only view. Only the owner can flip it, not the admin, and the same read-only rule applies: there is no write path for a visitor.
 
 **Realtime sync.** Check in on your phone and your laptop updates immediately, over Pusher Channels. Clients patch their local state from the event instead of refetching.
 

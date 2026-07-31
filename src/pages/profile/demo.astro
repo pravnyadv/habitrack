@@ -1,0 +1,11 @@
+---
+import HabitApp from '../../components/HabitApp.astro';
+import { demoSeed } from '../../lib/demo.js';
+
+// The shareable demo: no session, no DB, no writes. The seed is hardcoded (see
+// lib/demo.js) and SSR'd so the page paints with data, then the visitor's browser
+// forks it into localStorage and every edit they make stays there.
+const seed = demoSeed();
+---
+
+<HabitApp mode="demo" initialHabits={seed} />
