@@ -1,19 +1,23 @@
 ---
 import ProfileLayout from '../../layouts/ProfileLayout.astro';
 import Overview from '../../components/Overview.jsx';
-import { getSql, listHabits } from '../../lib/db.js';
+import { getSql, listHabits, getProfile } from '../../lib/db.js';
 import { verifyToken, TOKEN_COOKIE } from '../../lib/auth.js';
 
 const env = Astro.locals.runtime?.env;
 const pid = await verifyToken(Astro.cookies.get(TOKEN_COOKIE)?.value, env);
 if (!pid) return Astro.redirect('/profile/switch');
+// The profile row is only needed for the admin-only nav tab, so it rides along with
+// the habits in one round-trip generation rather than adding latency.
+const sql = getSql(env);
+const [rows, me] = await Promise.all([listHabits(sql, pid), getProfile(sql, pid)]);
 // Neon returns created_at as a Date; compute.js expects an ISO string.
-const habits = (await listHabits(getSql(env), pid)).map((h) => ({
+const habits = rows.map((h) => ({
   ...h,
   created_at: h.created_at instanceof Date ? h.created_at.toISOString() : h.created_at,
 }));
 ---
 
-<ProfileLayout heading="Profile" tab="overview" backHref="/">
+<ProfileLayout heading="Profile" tab="overview" admin={!!me?.is_admin} backHref="/">
   <Overview client:load initialHabits={habits} profileId={pid} />
 </ProfileLayout>

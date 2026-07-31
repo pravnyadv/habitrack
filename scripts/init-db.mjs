@@ -71,6 +71,18 @@ await sql`
 // a blanket UPDATE would auto-accept real pending invites on every re-run.
 await sql`ALTER TABLE profile_shares ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ`;
 
+// Demo traffic: one row per visit to /profile/demo. visitor_id is a random id the
+// visitor's browser keeps in localStorage — no login, no IP, no fingerprint — so
+// COUNT(DISTINCT visitor_id) is "unique browsers that kept the id".
+await sql`
+  CREATE TABLE IF NOT EXISTS demo_visits (
+    id         SERIAL PRIMARY KEY,
+    visitor_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )
+`;
+await sql`CREATE INDEX IF NOT EXISTS demo_visits_created_at_idx ON demo_visits (created_at DESC)`;
+
 // Frequency: CSV of JS weekday numbers (0=Sun … 6=Sat) the habit is scheduled on.
 await sql`ALTER TABLE habits ADD COLUMN IF NOT EXISTS schedule TEXT NOT NULL DEFAULT '0,1,2,3,4,5,6'`;
 
@@ -116,6 +128,9 @@ await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP
 // Token revocation: bumped on passcode change; a token is valid only while its
 // embedded version matches. Legacy pre-versioning tokens count as 0.
 await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0`;
+
+// Public profile: opt-in read-only access for anyone, signed in or not (/p/<id>).
+await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false`;
 
 // Add habits.profile_id with the default profile as the column default, so old
 // code that inserts without it still lands in the default profile.

@@ -57,7 +57,14 @@ export async function PATCH({ params, request, locals, cookies }) {
     fields.passcodeHash = await hashPasscode(newPasscode);
   }
 
-  if (fields.name == null && fields.passcodeHash == null) {
+  // Publishing exposes this profile's habits to anyone, so only the owner can
+  // flip it — an admin renaming someone doesn't get to publish them.
+  if (body.isPublic != null) {
+    if (!isSelf) return json({ error: 'Only the profile owner can change visibility' }, 403);
+    fields.isPublic = body.isPublic === true;
+  }
+
+  if (fields.name == null && fields.passcodeHash == null && fields.isPublic == null) {
     return json({ error: 'Nothing to update' }, 400);
   }
 
@@ -72,5 +79,5 @@ export async function PATCH({ params, request, locals, cookies }) {
     cookies.set(TOKEN_COOKIE, token, sessionCookieOpts);
   }
 
-  return json({ ok: true, id: updated.id, name: updated.name, ...(token ? { token } : {}) });
+  return json({ ok: true, id: updated.id, name: updated.name, isPublic: updated.is_public, ...(token ? { token } : {}) });
 }

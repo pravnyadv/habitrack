@@ -14,13 +14,21 @@ export function getSql(env) {
 
 // --- Profiles ---------------------------------------------------------------
 
-// Public list (no hashes) for the gate's profile picker.
+// Public list (no hashes) for the gate's profile picker. `is_public` rides along
+// so the picker can badge each row and send public ones straight to /p/<id>.
 export async function listProfiles(sql) {
-  return sql`SELECT id, name FROM profiles ORDER BY id ASC`;
+  return sql`SELECT id, name, is_public FROM profiles ORDER BY id ASC`;
 }
 
 export async function getProfile(sql, id) {
-  const rows = await sql`SELECT id, name, passcode_hash, is_admin, failed_attempts, locked_until, token_version FROM profiles WHERE id = ${id}`;
+  const rows = await sql`SELECT id, name, passcode_hash, is_admin, is_public, failed_attempts, locked_until, token_version FROM profiles WHERE id = ${id}`;
+  return rows[0] || null;
+}
+
+// Name + id, but only when the profile is public. Returns null for a private or
+// missing profile, so /p/<id> can't be used to probe which ids exist.
+export async function getPublicProfile(sql, id) {
+  const rows = await sql`SELECT id, name FROM profiles WHERE id = ${id} AND is_public`;
   return rows[0] || null;
 }
 
@@ -92,16 +100,22 @@ export async function deleteProfile(sql, id) {
   await sql`DELETE FROM profiles WHERE id = ${id}`;
 }
 
-// Update name and/or passcode_hash (only the fields provided).
-export async function updateProfile(sql, id, { name, passcodeHash }) {
-  if (name != null && passcodeHash != null) {
-    await sql`UPDATE profiles SET name = ${name}, passcode_hash = ${passcodeHash} WHERE id = ${id}`;
-  } else if (name != null) {
-    await sql`UPDATE profiles SET name = ${name} WHERE id = ${id}`;
-  } else if (passcodeHash != null) {
-    await sql`UPDATE profiles SET passcode_hash = ${passcodeHash} WHERE id = ${id}`;
+// Update any subset of {name, passcodeHash, isPublic} in one statement. Column
+// names come from a fixed whitelist (never user input); values are parameterized.
+export async function updateProfile(sql, id, fields) {
+  const COLUMNS = { name: 'name', passcodeHash: 'passcode_hash', isPublic: 'is_public' };
+  const sets = [];
+  const vals = [];
+  for (const [key, col] of Object.entries(COLUMNS)) {
+    if (fields[key] != null) { vals.push(fields[key]); sets.push(`${col} = $${vals.length}`); }
   }
-  const rows = await sql`SELECT id, name FROM profiles WHERE id = ${id}`;
+  if (!sets.length) return null;
+  vals.push(id);
+  const rows = await sql.query(
+    `UPDATE profiles SET ${sets.join(', ')} WHERE id = $${vals.length}
+     RETURNING id, name, is_public`,
+    vals
+  );
   return rows[0] || null;
 }
 
@@ -149,13 +163,63 @@ export async function deleteShare(sql, ownerId, viewerId) {
   await sql`DELETE FROM profile_shares WHERE owner_id = ${ownerId} AND viewer_id = ${viewerId}`;
 }
 
-// True if viewerId may read ownerId's data (an *accepted* share exists).
-export async function canView(sql, viewerId, ownerId) {
+// True if viewerId may read ownerId's data: either ownerId is public (anyone,
+// including an anonymous caller with viewerId = null) or an *accepted* share
+// exists. One round trip covers both — the EXISTS is simply false for a null
+// viewer, so anonymous callers can only ever reach public profiles.
+export async function canViewProfile(sql, viewerId, ownerId) {
   const rows = await sql`
-    SELECT 1 FROM profile_shares
-    WHERE owner_id = ${ownerId} AND viewer_id = ${viewerId} AND accepted_at IS NOT NULL
+    SELECT 1 FROM profiles p
+    WHERE p.id = ${ownerId}
+      AND (p.is_public OR EXISTS (
+        SELECT 1 FROM profile_shares s
+        WHERE s.owner_id = p.id AND s.viewer_id = ${viewerId} AND s.accepted_at IS NOT NULL
+      ))
   `;
   return rows.length > 0;
+}
+
+// --- Demo visits ------------------------------------------------------------
+
+export async function recordDemoVisit(sql, visitorId) {
+  await sql`INSERT INTO demo_visits (visitor_id) VALUES (${visitorId})`;
+}
+
+// Everything the stats page shows, one round trip per query (the page fires them in
+// parallel): totals, a per-day breakdown, and per-visitor visit counts.
+export async function demoVisitTotals(sql) {
+  const rows = await sql`
+    SELECT COUNT(*)::int AS visits,
+           COUNT(DISTINCT visitor_id)::int AS visitors,
+           MIN(created_at) AS first_visit,
+           MAX(created_at) AS last_visit
+    FROM demo_visits
+  `;
+  return rows[0];
+}
+
+export async function demoVisitsByDay(sql, days = 30) {
+  return sql`
+    SELECT created_at::date::text AS day,
+           COUNT(*)::int AS visits,
+           COUNT(DISTINCT visitor_id)::int AS visitors
+    FROM demo_visits
+    WHERE created_at > now() - ${days} * interval '1 day'
+    GROUP BY 1
+    ORDER BY 1 DESC
+  `;
+}
+
+export async function demoVisitors(sql, limit = 50) {
+  return sql`
+    SELECT visitor_id,
+           COUNT(*)::int AS visits,
+           MAX(created_at) AS last_seen
+    FROM demo_visits
+    GROUP BY visitor_id
+    ORDER BY MAX(created_at) DESC
+    LIMIT ${limit}
+  `;
 }
 
 // --- Data helpers (all scoped to a profile) ---------------------------------

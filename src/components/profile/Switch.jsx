@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'preact/hooks';
 import { apiFetch } from '../../lib/compute.js';
-import { TK, PID, VIEW, SECTION, PERSON, EYE, presence, go } from './ui.jsx';
+import { TK, PID, VIEW, SECTION, PERSON, EYE, Visibility, presence, go } from './ui.jsx';
 
 // Two modes, keyed on `me`:
-//   Logged out  → onboarding picker: every profile (tap → sign in) + create one.
+//   Logged out  → onboarding picker: every profile, badged Private or Public, plus
+//                 create one. A private row taps through to sign-in; a public row
+//                 opens the read-only /p/<id> view instead, so its own "Sign in"
+//                 chip is what gets the owner to the passcode screen.
 //   Logged in   → the "Switch" tab: your current profile, invites to accept, and
 //                 profiles shared with you (tap = PREVIEW, read-only, no passcode).
 //                 We deliberately do NOT list other profiles here — you can only
 //                 open one someone has shared with you, and that never needs a passcode.
-// props: profiles=[{id,name}], me={id,name,admin}|null, shares={sharedWithMe,invites}
+// props: profiles=[{id,name,is_public}], me={id,name,admin}|null, shares={sharedWithMe,invites}
 export default function Switch({ profiles = [], me = null, shares: initialShares = { sharedWithMe: [], invites: [] } }) {
   const [shares, setShares] = useState(initialShares);
   const [restoring, setRestoring] = useState(false);
@@ -48,11 +51,20 @@ export default function Switch({ profiles = [], me = null, shares: initialShares
       <div class="flex flex-col gap-2">
         <h2 class={SECTION}>Choose a profile</h2>
         {profiles.map((p) => (
-          <a key={p.id} href={`/profile/login?id=${p.id}`}
-            class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-emerald-400 dark:border-slate-800 dark:bg-slate-900">
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">{PERSON}</span>
-            <span class="min-w-0 flex-1 truncate text-sm font-medium">{p.name}</span>
-          </a>
+          <div key={p.id}
+            class="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition focus-within:border-emerald-400 hover:border-emerald-400 dark:border-slate-800 dark:bg-slate-900">
+            <a href={p.is_public ? `/p/${p.id}` : `/profile/login?id=${p.id}`}
+              class="flex min-w-0 flex-1 items-center gap-3"
+              title={p.is_public ? `View ${p.name}'s habits (read-only)` : `Sign in as ${p.name}`}>
+              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">{p.is_public ? EYE : PERSON}</span>
+              <span class="min-w-0 flex-1 truncate text-sm font-medium">{p.name}</span>
+              <Visibility isPublic={p.is_public} />
+            </a>
+            {p.is_public && (
+              <a href={`/profile/login?id=${p.id}`}
+                class="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">Sign in</a>
+            )}
+          </div>
         ))}
         <a href="/profile/create"
           class="mt-1 flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-slate-300 py-3 text-sm font-medium text-slate-500 transition hover:border-emerald-400 hover:text-emerald-600 dark:border-slate-700 dark:text-slate-400">

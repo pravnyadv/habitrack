@@ -5,7 +5,9 @@
 //   showAdd     — render the "＋ new habit" button (main app only; wired by index)
 //   showOverview— render the Overview quick-link (main app only)
 //   showHabits  — render the "← Habits" back-to-app link (profile hub only)
-const { showAdd = false, showOverview = false, showHabits = false } = Astro.props;
+//   showSignIn  — render a "Sign in" link (public profile view: no session at all,
+//                 so the account chip never appears and there's nothing to go back to)
+const { showAdd = false, showOverview = false, showHabits = false, showSignIn = false } = Astro.props;
 const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 ---
 
@@ -72,6 +74,12 @@ const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: '
         Back
       </a>
     )}
+    {showSignIn && (
+      <a href="/profile"
+        class="rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600">
+        Sign in
+      </a>
+    )}
     {showOverview && (
       <a href="/profile" aria-label="Overview" title="Overview"
         class="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white">
@@ -93,6 +101,11 @@ const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: '
   const read = (k) => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } };
   const profile = read(PID);
   const viewing = read(VIEW);
+  // Session-less surfaces (public profile, demo) set data-mode. A signed-in visitor
+  // still has a profile in localStorage there, so without this the header would show
+  // their account chip next to a "Sign in" button and heartbeat from a page that
+  // isn't their app. The gated pages set no attribute, so they default to 'app'.
+  const inApp = (document.documentElement.dataset.mode || 'app') === 'app';
 
   document.getElementById('theme-toggle')?.addEventListener('click', () => {
     const dark = document.documentElement.classList.toggle('dark');
@@ -102,7 +115,7 @@ const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: '
   const chip = document.getElementById('profile-chip');
   const menu = document.getElementById('profile-menu');
   // Show the account chip when signed in and not in read-only view mode.
-  if (chip && profile && !viewing) {
+  if (chip && profile && !viewing && inApp) {
     document.getElementById('profile-chip-name').textContent = profile.name;
     chip.classList.remove('hidden');
     chip.classList.add('flex');
@@ -128,7 +141,7 @@ const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: '
 
   // Presence: heartbeat while the tab is visible (keeps us "online"), plus the
   // admin-only online count in the chip.
-  if (profile) {
+  if (profile && inApp) {
     const beat = () => (document.visibilityState === 'visible' ? fetch('/api/heartbeat', { method: 'POST' }).catch(() => {}) : null);
     beat();
     setInterval(beat, 45000);

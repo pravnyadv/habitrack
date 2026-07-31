@@ -20,8 +20,9 @@ A personal habit tracker — a cleaner take on [beaverhabits](https://github.com
 ```
 src/
   pages/
-    index.astro          # main app (vanilla): Habits/Streaks tabs, list, calendar, realtime,
-                         # two-track Today card, emoji picker. SSRs own habits (no flash)
+    index.astro          # signed-in app: SSRs own habits + identity → <HabitApp mode="app">
+    p/[id].astro         # PUBLIC profile, no session: SSRs a public profile's habits
+                         # → <HabitApp mode="public" viewing={{id,name}}>; private/missing → /switch
     overview.astro       # redirect → /profile (kept for old links)
     profile/
       index.astro        # /profile = Overview tab (SSR own habits → <Overview client:load>); unauthed → /switch
@@ -29,38 +30,57 @@ src/
       login.astro        # SSR target profile (?id) → <Login client:load>
       create.astro       # SSR profiles (dup check) → <Create client:load>
       manage.astro       # SSR me+profiles+shares+presence → <Manage client:load> (auth-gated)
+      demo.astro         # PUBLIC demo: SSRs the hardcoded seed → <HabitApp mode="demo"> (no DB, no auth)
+      stats.astro        # admin-only demo traffic (gated + is_admin check); plain Astro, no island
+                         # (the "Demo stats" hub tab, tab="stats")
       overview.astro     # redirect → /profile
   layouts/
-    ProfileLayout.astro  # /profile shell: <AppHeader> + Overview/Manage/Switch tab nav (when `tab` set)
+    ProfileLayout.astro  # /profile shell: <AppHeader> + hub tab nav when `tab` is set —
+                         # Overview/Manage/Switch, plus "Demo stats" when `admin`. Every
+                         # tabbed page passes `admin` so the nav doesn't change shape between
+                         # tabs and non-admins never see a tab that just redirects them.
   components/
     AppHeader.astro      # THE shared header (index + all /profile pages): 🦫 logo→home, date, account
                          # chip + dropdown menu (Overview/Manage/Switch/Log out), theme toggle, and one
                          # self-contained <script> owning chip menu + theme + presence heartbeat + admin
-                         # online badge. `showAdd`/`showOverview` props add the app-only buttons.
+                         # online badge. `showAdd`/`showOverview` props add the app-only buttons;
+                         # `showSignIn` swaps them for a Sign in link (public view, no session).
+    HabitApp.astro       # THE whole app body (vanilla JS): Habits/Streaks tabs, list, calendar,
+                         # realtime, two-track Today card, emoji picker, add buttons. Rendered by
+                         # index.astro, p/[id].astro AND profile/demo.astro; one `mode` prop
+                         # ('app'|'public'|'demo') picks the surface, also stamped on <html data-mode>
     Overview.jsx         # Preact: aggregate stats + heatmap + CSV/JSON export (SSR habits via props)
     profile/
       ui.jsx             # shared classes, icons, presence(), <Msg>, <Confirm>
       Login.jsx Create.jsx Switch.jsx Manage.jsx   # focused Preact islands, one per route
   pages/api/
-      habits.js          # GET list (own, or ?profile=<id> if shared) / POST create
+      habits.js          # GET list (own; or ?profile=<id> if public or shared — ?profile needs
+                         # no session, that's the public-profile read path) / POST create
       habits/[id].js     # DELETE / PATCH (edit name/emoji/color/schedule)
       habits/reorder.js  # POST {ids:[...]} -> set sort_order (token-scoped)
       checkins.js        # POST toggle a day (token-scoped; only within the BACKFILL_DAYS window)
       login.js           # POST {profileId,passcode} -> token + sets session cookie (throttled: 5 fails -> 15min lock, 429)
       logout.js          # POST clears the session cookie
       session.js         # POST re-issues the session cookie from a Bearer token (PWA/Safari cookie loss)
-      profiles.js        # GET list (public) / POST create (open, sets session cookie)
-      profiles/[id].js   # DELETE (self or admin) / PATCH (rename, change passcode)
+      profiles.js        # GET list (public: id/name/is_public) / POST create (open, sets session cookie)
+      profiles/[id].js   # DELETE (self or admin) / PATCH (rename; passcode + isPublic are self-only)
       shares.js          # GET {shared,sharedWithMe,invites} / POST invite / PATCH accept / DELETE ?viewer|?owner
       heartbeat.js       # POST bump own last_active_at (presence)
       presence.js        # GET (admin only) {online, profiles:[{name,last_active_at,online}]}
       rt-config.js       # GET public Pusher key+cluster
-  middleware.js          # server-side auth gate: /,/profile/manage → redirect /profile if no cookie (/profile self-guards → /switch)
+      demo-visit.js      # POST {visitorId} bump demo traffic (public — the demo has no session)
+  middleware.js          # server-side auth gate: /,/profile/manage,/profile/stats → /profile if no
+                         # cookie (/profile self-guards → /switch; /p/<id> + /profile/demo ungated)
   lib/
     db.js                # getSql(env) + query helpers (all take `sql` first, scoped by profileId)
     auth.js              # PBKDF2 hash/verify + signed tokens; verifyToken, authedProfile (header|cookie), sessionCookieOpts
     realtime.js          # broadcast(env, profileId, payload, socketId) -> Pusher REST
-    compute.js           # shared client helpers: dates, COLORS, stats, heatmaps, export, connectRealtime, apiFetch
+    compute.js           # shared client helpers: dates, COLORS, stats, heatmaps, export, connectRealtime,
+                         # apiFetch, + habit-creation rules (normalizeSchedule/resolveStartDate/
+                         # scheduledDays) shared by the API and the demo sandbox
+    demo.js              # demoSeed() (hardcoded demo data, generated relative to today, day-cached)
+                         # + demoApi()/load/save/clear (localStorage stand-in for the write API)
+                         # + trackDemoVisit()
   styles/global.css      # tailwind import, dark variant, safe-area, no-scrollbar
 public/                  # icons, manifest.webmanifest, sw.js, robots.txt (blocks all)
 scripts/init-db.mjs      # idempotent schema create/migrate + seed
@@ -101,11 +121,19 @@ Profile creation is **open** (anyone with the URL). The first/default profile (`
 
 **PWA / Safari cookie loss → session restore.** Installed PWAs (iOS standalone especially) and Safari ITP can drop the httpOnly cookie while **localStorage keeps the token** — so the middleware gate 302s `/` → `/profile` even though the client is "logged in", stranding the user on the picker. Fix: `POST /api/session` re-issues the cookie from a valid `Authorization: Bearer` token (no DB). The logged-out `Switch` picker (`me=null`) checks for a localStorage token on mount and, if present, calls `/api/session` and goes to `/` (shows "Restoring your session…"); a stale token clears localStorage and falls back to the picker. **Realtime is unaffected** — Pusher uses public channels (`habitrack-<profileId>`) with just the public key+cluster (no authorizer, no cookie), and all client API calls authenticate via the Bearer header, so only the server-side navigation gate ever depended on the cookie.
 
+**Public profiles (opt-in, read by anyone).** `profiles.is_public` (default false) makes a profile readable at **`/p/<id>`** by anyone, **signed in or not**. The owner flips it in Manage (confirmation on the way out, immediate on the way back), which also shows the copyable link. Only the owner can flip it — an admin who can rename another profile still gets a 403 on `isPublic`, since publishing someone is a privacy decision, not an admin one. The logged-out picker badges every row **Private** or **Public**: a private row taps through to `/profile/login`, a public row opens `/p/<id>` and carries a separate "Sign in" chip so the owner can still reach the passcode screen. `/p/<id>` returns a redirect to `/profile/switch` for a private *or* nonexistent id, so it can't be used to probe which ids exist. Server side: `GET /api/habits?profile=<id>` requires **no session** (that's what makes an anonymous read possible) but still goes through `canViewProfile`, which passes only if the target is public or an accepted share exists — one query covers both, and with a null caller the share `EXISTS` is simply false. **Everything else is unchanged**: mutating endpoints still ignore `?profile` and still demand a session, so an anonymous visitor physically cannot write. Public profiles stay out of search engines (`robots.txt` blocks all + `noindex`) — public means "anyone with the link or the picker", not "indexed".
+
+**The demo (`/profile/demo`) is writable but never touches the database.** It's the link to hand strangers. `lib/demo.js` holds a **hardcoded** seed (8 habits/quits) generated relative to today, so streaks stay current and it can't go stale or empty. Deliberately *not* sourced from a real profile: that would mean curating a prod profile forever, and letting visitors write to it would mean cleaning up after them. The page SSRs the seed into `#initial-habits`; the client forks it into `localStorage.habitrack_demo` and **`api()` is swapped for `demoApi()`**, which answers every endpoint locally with the same `{ok,status,data}` shape. So add/edit/delete/reorder/check-in all work for a visitor with no session and no writes. Realtime is off (no server-side profile to watch). Three things to keep in mind when touching this. **The habit-derivation rules are shared, not copied**: `normalizeSchedule`, `resolveStartDate` and `scheduledDays` live in `compute.js` and are called by both `api/habits.js` and `demoApi` — an earlier copy in `demoApi` had already drifted (it returned `schedule` as an array where the real endpoint returns CSV, which broke `schedOf` after a demo edit). **The sandbox is persisted by an explicit `persist()` at the five mutation sites**, not from `render()` — `render()` also runs for pure UI (expanding a card, paging the calendar, switching tabs) and persisting there re-stringified every habit and hit localStorage synchronously on each of those. **`#initial-state` keeps the pristine seed** in the DOM, which is what Reset restores. Everything except `GET /api/habits`, `POST /api/habits` and PATCH is applied optimistically by the caller, so `demoApi` only needs to acknowledge it.
+
+**Demo traffic counting.** `demo_visits (visitor_id, created_at)`, one row per visit. Identity is a `crypto.randomUUID()` in `localStorage.habitrack_demo_visitor` — no login, no IP, no fingerprint — so "unique visitors" means "browsers that kept the id". `POST /api/demo-visit` is necessarily public (the demo has no session); it charset/length-checks the id and swallows insert errors so analytics can never break the demo. One POST per tab session (`sessionStorage`), so reloads don't inflate counts. `/profile/stats` (admin-only) shows totals, a 30-day bar breakdown, and per-visitor last-seen.
+
+**`HabitApp.astro` is the app body; three routes render it, distinguished by ONE `mode` prop** (`'app' | 'public' | 'demo'`) so there are no illegal combinations and each branch reads the mode instead of re-deriving it from a pile of booleans. `index.astro`, `p/[id].astro` and `profile/demo.astro` each SSR their own data and hand it to the same component, so the three surfaces can't drift apart. The whole starting state (`{mode, habits, profile, viewing}`) travels in **one** `<script id="initial-state" type="application/json">` and is decoded once; `mode` is also stamped on `<html data-mode>` because `AppHeader` has its own script that would otherwise re-derive the surface from localStorage and disagree (a signed-in visitor on `/p/<id>` would get their account chip *and* a Sign in button, and would heartbeat from a page that isn't their app). The client reads `habitrack_viewing` from localStorage only when the SSR state has no `viewing`. In a public view `boot()` renders the SSR'd habits immediately (they already belong to the viewed profile — no fetch), realtime still binds (Pusher channels are public), the read-only banner is **SSR'd visible** so a public link never flashes as if it were your own app, and the iOS install hint is suppressed. `AppHeader` gets `showAdd={false}`, so anything touching `#add-btn` must stay null-safe. Read-only chrome is applied **once in `enterApp()`** (keyed on `readOnly()`), not per render — `viewing` can't change without a reload, and `render()` runs on every check-in.
+
 **`index.astro` SSRs the initial habits.** Since middleware guarantees a valid cookie, the page frontmatter fetches the signed-in profile's habits and embeds them in a `<script id="initial-habits" type="application/json">` (with `<` escaped); the client renders from that immediately, then reconciles with a background fetch. View-mode (a client-only concept via `habitrack_viewing`) still fetches the viewed profile. **It also SSRs the profile identity (id/name/admin, cookie-derived) and the client hydrates `localStorage.habitrack_profile` from it when empty** — iOS copies the session cookie into an installed PWA at install time but *not* localStorage, so without this the cookie is valid while the client has no profile and `boot()` bounces `/ ⇄ /profile` forever. Same-origin API calls authenticate on the cookie, so the missing localStorage token is harmless.
 
 **The gate is a set of real routes under `/profile/`** (switch, login, create, manage) — each an SSR page + focused Preact island, not a modal or client view-state. `index.astro` holds no gate. The chip menu's Manage/Switch navigate to `/profile/manage` / `/profile/switch`; Log out POSTs `/api/logout` + clears localStorage → `/profile`. After login/create/pick-self, the island navigates back to `/`. localStorage holds the non-sensitive `profile` ({id,name,admin}) for UI labels (+ a redundant token copy, pending cleanup). Note: server-side `listHabits` returns `created_at` as a `Date` — normalize to an ISO string before passing habits as island props (`compute.js` expects strings; the JSON API path gets this for free).
 
-**View-only sharing (accept-based).** A profile invites another to view its data (accountability). Shares start **pending** (`accepted_at IS NULL`) — the recipient must accept before `canView` grants anything. `habits`/`version` GET accept `?profile=<id>`: if present and not the caller's own id, the server checks `canView(sql, caller, target)` (an *accepted* `profile_shares` row) and 403s otherwise. NB: parse the param as `raw != null ? Number(raw) : null` — `Number(null)===0` and `Number.isInteger(0)` is true, so a naive `Number(...)` wrongly treats "no param" as profile 0 and 403s own data. **Mutating endpoints never honor `?profile`** — they always scope to the caller's own id, so a viewer physically cannot write. Client: `habitrack_viewing` ({id,name}) in localStorage puts index + overview into read-only mode (banner, no add/edit/delete/toggle/reorder, cells render as inert `<div>`s); entering/leaving reloads the page so realtime rebinds to the viewed profile's channel. **The signed-in Switch tab is preview-only**: it lists just your own profile ("Signed in as"), **Invites** (accept/decline), and **Shared with you** (tap = enter preview/view mode, **no passcode** — they shared access, not their passcode). It does **not** list the full profile roster and has **no "New profile"** — creating profiles is an onboarding action, so the roster + create button live only in the **logged-out picker** (`Switch` with `me=null`, tapping a profile → `/profile/login`). Manage screen invites (dropdown), shows pending/active, and revokes.
+**View-only sharing (accept-based).** A profile invites another to view its data (accountability). Shares start **pending** (`accepted_at IS NULL`) — the recipient must accept before `canViewProfile` grants anything. `habits` GET accepts `?profile=<id>`: if present and not the caller's own id, the server checks `canViewProfile(sql, caller, target)` (public profile *or* an *accepted* `profile_shares` row) and 403s otherwise. NB: parse the param as `raw != null ? Number(raw) : null` — `Number(null)===0` and `Number.isInteger(0)` is true, so a naive `Number(...)` wrongly treats "no param" as profile 0 and 403s own data. **Mutating endpoints never honor `?profile`** — they always scope to the caller's own id, so a viewer physically cannot write. Client: `habitrack_viewing` ({id,name}) in localStorage puts index + overview into read-only mode (banner, no add/edit/delete/toggle/reorder, cells render as inert `<div>`s); entering/leaving reloads the page so realtime rebinds to the viewed profile's channel. **The signed-in Switch tab is preview-only**: it lists just your own profile ("Signed in as"), **Invites** (accept/decline), and **Shared with you** (tap = enter preview/view mode, **no passcode** — they shared access, not their passcode). It does **not** list the full profile roster and has **no "New profile"** — creating profiles is an onboarding action, so the roster + create button live only in the **logged-out picker** (`Switch` with `me=null`, tapping a profile → `/profile/login`). Manage screen invites (dropdown), shows pending/active, and revokes.
 
 **Login throttle.** `profiles.failed_attempts` + `locked_until`: 5 consecutive wrong passcodes lock the profile for 15 min (login returns 429); a correct passcode clears the counter. Passcode min length is **6** (create + change). Profile names are **not unique** (ids scope everything) — the create form only soft-warns on a duplicate.
 
@@ -115,12 +143,14 @@ Profile creation is **open** (anyone with the URL). The first/default profile (`
 
 ## Data model
 
-- `profiles (id, name, passcode_hash, is_admin, failed_attempts, locked_until, last_active_at, created_at)`
+- `profiles (id, name, passcode_hash, is_admin, is_public, failed_attempts, locked_until, last_active_at, created_at)`
+  - `is_public` = anyone can read this profile at `/p/<id>`, no session. Default false.
 - `habits (id, profile_id → profiles ON DELETE CASCADE, name, emoji, color, sort_order, schedule TEXT, kind TEXT, start_date DATE, created_at)`
   - `schedule` = CSV of JS weekday numbers (`0`=Sun … `6`=Sat), default `0,1,2,3,4,5,6`.
   - `kind` = `'normal'` (build a habit) or `'streak'` (quit/abstain). Default `'normal'`. See "Habit kinds" below.
   - `start_date` = when tracking began, backdated at create time. Nullable; falls back to the created date.
 - `checkins (id, habit_id → habits ON DELETE CASCADE, day DATE, UNIQUE(habit_id, day))`
+- `demo_visits (id, visitor_id TEXT, created_at)` — one row per `/profile/demo` visit. No FK: visitors have no profile.
 - `profile_shares (id, owner_id → profiles, viewer_id → profiles, created_at, accepted_at, UNIQUE(owner_id, viewer_id))` — owner invites viewer to read-only access; `accepted_at` NULL = pending. Both FKs `ON DELETE CASCADE`.
 
 Stats/streaks/heatmaps are computed **client-side** from each habit's `days` array. Non-scheduled days are "rest days" (not counted; streaks skip them). "Active from" = earlier of a habit's created date / first check-in — days before that are never "missed". See `compute.js`.
@@ -142,7 +172,7 @@ Consequences worth remembering:
 - **Creating a `normal` habit with a backdated `startDate` backfills check-ins** for every scheduled day from that date to today (`habits.js:69`), so an existing streak carries over. Creating a `streak` habit backfills nothing, since no rows means clean.
 - `compute.js` exports `isStreak()`, `startOf()`, `streakStats()` and `streakGraph()`. `stats()` dispatches on kind, so call it rather than branching at the call site.
 
-The app UI splits the two with a **kind switcher** (`#kind-tabs`) above the list. The active tab also decides what the `+` button creates. The Today card is **two-track**: one ring for habits due today, one for quits still clean today, each rendered only if that track has anything to show.
+The app UI splits the two with a **kind switcher** (`#kind-tabs`) above the list. The active tab also decides what the `+` button creates. There are **two** add buttons: the small `#add-btn` in the header and the permanent dashed `#add-btn-bottom` under the list (people were missing the header one). The bottom one is always visible except in read-only views, and `render()` sets its label from the active tab. It replaced the old empty-state-only button, so the empty state now has text only. The Today card is **two-track**: one ring for habits due today, one for quits still clean today, each rendered only if that track has anything to show.
 
 ## Realtime
 
