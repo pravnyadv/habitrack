@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import AppHeader from './AppHeader.astro';
+import SplashLinks from './SplashLinks.astro';
 
 // The whole habit app (list, calendars, Today card, add/edit form), rendered by
 // two routes that fetch their own data:
@@ -46,6 +47,7 @@ const embed = (v) => JSON.stringify(v ?? null).replace(/</g, '\\u003c');
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#020617" media="(prefers-color-scheme: dark)" />
+    <SplashLinks />
     <script is:inline>
       // The signed-in route is gated server-side by middleware (redirects to
       // /profile before any HTML is sent) and the public route needs no session,

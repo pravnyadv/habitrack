@@ -34,3 +34,7 @@
   Cache-Control: public, max-age=86400
 /apple-touch-icon.png
   Cache-Control: public, max-age=86400
+
+# iOS launch images. A device only ever fetches the one whose media query matches.
+/splash/*
+  Cache-Control: public, max-age=86400

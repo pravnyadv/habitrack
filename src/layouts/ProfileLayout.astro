@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import AppHeader from '../components/AppHeader.astro';
+import SplashLinks from '../components/SplashLinks.astro';
 // Same shell + header as the main app (via <AppHeader>), so /profile never feels
 // like a different app. When `tab` is set, render the hub nav.
 //   admin — also show the admin-only "Demo stats" tab. Every tabbed page passes
@@ -23,6 +24,7 @@ const TABS = [
     <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#020617" media="(prefers-color-scheme: dark)" />
+    <SplashLinks />
     <script is:inline>
       const t = localStorage.getItem('theme');
       if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches)) {
