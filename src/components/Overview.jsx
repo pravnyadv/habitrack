@@ -30,7 +30,7 @@ export default function Overview({ initialHabits = [], profileId }) {
     try { v = JSON.parse(localStorage.getItem(VIEW) || 'null'); } catch {}
     setViewing(v);
     const dataId = v ? v.id : profileId;
-    // Always fetch fresh on mount — the SSR snapshot can be stale on a long-lived
+    // Always fetch fresh on mount. The SSR snapshot can be stale on a long-lived
     // PWA (which keeps the page in memory for days). Cookie-authed, no token needed.
     load(v ? v.id : null);
     (async () => {
@@ -59,7 +59,7 @@ export default function Overview({ initialHabits = [], profileId }) {
     };
   }, []);
 
-  // Streak (quit/abstain) habits store slip days, not completions — they'd skew
+  // Streak (quit/abstain) habits store slip days, not completions, so they'd skew
   // "avg completion". The Overview is about normal habits only.
   const norm = habits.filter((h) => h.kind !== 'streak');
 
@@ -112,7 +112,7 @@ export default function Overview({ initialHabits = [], profileId }) {
   }, [habits, filter]);
 
   // Preact does not reliably re-apply `dangerouslySetInnerHTML` after hydration
-  // when the string is unchanged between renders — so the SSR graph could stay
+  // when the string is unchanged between renders, so the SSR graph could stay
   // stale/empty even though `agg.heat` is correct. Set it imperatively so the
   // DOM always matches the computed HTML.
   useEffect(() => {

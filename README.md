@@ -52,34 +52,47 @@ The frontend is mid-migration. The `/profile` hub is Preact islands; `index.astr
 ```
 src/
   pages/
-    index.astro          # main app: habit list, calendar, realtime (vanilla JS)
+    index.astro          # the signed-in app (SSRs its own habits)
+    p/[id].astro         # a public profile, read-only, no session
     profile/             # auth gate and account hub, one SSR page per tab
-      index.astro        #   Overview  aggregate stats, heatmaps, export
-      switch.astro       #   Switch    profile picker, invites, shared with you
-      login.astro        #   Login     passcode entry
-      create.astro       #   Create    new profile
-      manage.astro       #   Manage    rename, passcode, shares, admin presence
+      index.astro        #   Overview    aggregate stats, heatmaps, export
+      switch.astro       #   Switch      profile picker, invites, shared with you
+      login.astro        #   Login       passcode entry
+      create.astro       #   Create      new profile
+      manage.astro       #   Manage      rename, passcode, shares, admin presence
+      demo.astro         #   Demo        no login, writes go to localStorage
+      stats.astro        #   Demo stats  admin only, demo traffic
     api/                 # habits, checkins, login/logout/session, profiles,
-                         # shares, heartbeat, presence, rt-config
+                         # shares, heartbeat, presence, rt-config, demo-visit
   components/
+    HabitApp.astro       # the whole app body, shared by the three surfaces above
     AppHeader.astro      # shared header: logo, account chip, theme, heartbeat
     Overview.jsx         # Preact: aggregate stats, heatmap, export
     profile/*.jsx        # one island per /profile route
+  layouts/
+    ProfileLayout.astro  # /profile shell: header plus hub tab nav
   lib/
     db.js                # getSql(env) and query helpers, all scoped by profileId
     auth.js              # PBKDF2 hashing, signed tokens, verifyToken
     realtime.js          # Pusher REST broadcast, manually signed for workerd
     compute.js           # shared client logic: dates, stats, heatmaps, apiFetch
+    render.js            # collapsed habit list markup, shared by SSR and client
+    demo.js              # demo seed plus the localStorage stand-in for the API
   middleware.js          # server-side auth gate
-scripts/init-db.mjs      # idempotent schema create, migrate and seed
+scripts/
+  init-db.mjs            # idempotent schema create, migrate and seed
+  gen-splash.mjs         # generates the iOS launch images and SplashLinks.astro
+test/                    # node --test over the pure logic
 ```
 
 Each `/profile` route fetches its own data server-side from the session cookie and hydrates one focused island with `client:load`, so navigating between tabs never shows a spinner.
 
+`index.astro`, `p/[id].astro` and `profile/demo.astro` all render the same `HabitApp.astro` and differ by one `mode` prop (`'app'`, `'public'`, `'demo'`), so the three surfaces cannot drift apart. The collapsed habit list is server-rendered from `lib/render.js`, which both the SSR pass and the client call, so the first paint needs no JavaScript.
+
 ## Data model
 
 ```
-profiles        id, name, passcode_hash, is_admin, token_version,
+profiles        id, name, passcode_hash, is_admin, is_public, token_version,
                 failed_attempts, locked_until, last_active_at, created_at
 
 habits          id, profile_id →profiles, name, emoji, color, sort_order,
@@ -89,9 +102,13 @@ checkins        id, habit_id →habits, day DATE, UNIQUE(habit_id, day)
 
 profile_shares  id, owner_id →profiles, viewer_id →profiles,
                 accepted_at, created_at, UNIQUE(owner_id, viewer_id)
+
+demo_visits     id, visitor_id, created_at
 ```
 
 `schedule` is a CSV of JS weekday numbers, `0`=Sun through `6`=Sat.
+
+`is_public` is what makes a profile readable at `/p/<id>`. `demo_visits` has no foreign key on purpose: a demo visitor has no profile, just a random id their own browser holds in localStorage.
 
 One table quirk worth knowing: a `checkins` row means *done* for a normal habit and *slipped* for a streak habit. Same storage, opposite meaning. Nothing is precomputed; all stats derive from these raw days in the browser.
 
@@ -152,8 +169,17 @@ wrangler pages secret put NEON_DB --project-name habitrack
 | `npm run build` | Build to `dist/` |
 | `npm run preview` | `wrangler pages dev dist`, the real Workers runtime locally |
 | `npm run deploy` | Build and deploy to Cloudflare Pages |
+| `npm test` | `node --test` over the pure logic, no DB and no network |
+| `npm run splash` | Regenerate the iOS launch images and `SplashLinks.astro` |
 
 Re-run `db:init` after any schema change. Every statement is `ALTER … IF NOT EXISTS` and backward compatible.
+
+`npm run deploy` refuses to run unless `CLOUDFLARE_ACCOUNT_ID` is exported. Pages config cannot hold an account id, and letting wrangler choose one for you is how a deploy lands in the wrong account.
+
+```bash
+export CLOUDFLARE_ACCOUNT_ID=…
+npm run deploy
+```
 
 ## Gotchas
 
@@ -167,6 +193,15 @@ Each of these cost real debugging time and is easy to undo by accident.
 * **Every Neon call is a separate HTTP round trip.** Sequential awaits show up directly in time-to-first-byte. Use `Promise.all` for independent queries, and don't re-verify a token the middleware already verified.
 * **Astro blocks non-GET requests without a matching `Origin` header.** Browsers always send it; `curl` tests need `-H "Origin: <base>"`.
 
-## Licence
+## A note on `npm audit`
 
-Personal project, all rights reserved.
+It reports high-severity advisories. They fall into two groups, and neither is reachable in this app:
+
+* Most of them (`wrangler` → `miniflare` → `ws`/`undici`/`sharp`, plus an `esbuild` dev-server issue that only affects Windows) are local build tooling. None of it is deployed; the Workers runtime never sees it.
+* The rest are Astro core advisories with no fix inside the 5.x line, and 5.x is where the Cloudflare adapter pins this project. None of the affected features are used here: no `define:vars`, no server islands, no `Astro.slots`, no spread attributes, and no `transition:*` directives.
+
+Clearing the list means Astro 7 plus `@astrojs/cloudflare` v14, which is a deliberate upgrade rather than a patch bump.
+
+## License
+
+MIT, see [LICENSE](LICENSE).

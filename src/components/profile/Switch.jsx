@@ -9,7 +9,7 @@ import { TK, PID, VIEW, SECTION, PERSON, EYE, Visibility, presence, go } from '.
 //                 chip is what gets the owner to the passcode screen.
 //   Logged in   → the "Switch" tab: your current profile, invites to accept, and
 //                 profiles shared with you (tap = PREVIEW, read-only, no passcode).
-//                 We deliberately do NOT list other profiles here — you can only
+//                 We deliberately do NOT list other profiles here. You can only
 //                 open one someone has shared with you, and that never needs a passcode.
 // props: profiles=[{id,name,is_public}], me={id,name,admin}|null, shares={sharedWithMe,invites}
 export default function Switch({ profiles = [], me = null, shares: initialShares = { sharedWithMe: [], invites: [] } }) {

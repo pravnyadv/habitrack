@@ -9,7 +9,7 @@ const json = (data, status = 200) =>
 // Public by necessity: the demo has no session, so counting its visits can't be
 // authenticated. The only thing stored is the browser-generated id + a timestamp.
 // Ids are length-capped and charset-checked so the column can't be used as a
-// dumping ground, and a failed insert is swallowed — analytics must never break
+// dumping ground, and a failed insert is swallowed, because analytics must never break
 // the demo for the visitor.
 export async function POST({ request, locals }) {
   const body = await request.json().catch(() => ({}));

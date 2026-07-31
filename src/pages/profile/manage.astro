@@ -4,7 +4,7 @@ import Manage from '../../components/profile/Manage.jsx';
 import { getSql, listProfiles, getProfile, listShareViewers, listPresence } from '../../lib/db.js';
 
 // Middleware gates this route and hands over the verified id, so there's no
-// second verifyToken here. The three independent reads go out in parallel —
+// second verifyToken here. The three independent reads go out in parallel;
 // each Neon call is its own HTTP round trip.
 const env = Astro.locals.runtime?.env;
 const sql = getSql(env);

@@ -8,7 +8,7 @@ const json = (data, status = 200) =>
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   });
 
-// POST {ids: [...]} — persist the habit order (sort_order = position). Scoped to
+// POST {ids: [...]} persists the habit order (sort_order = position). Scoped to
 // the caller's own habits; ids from other profiles simply don't match.
 export async function POST({ request, locals }) {
   const env = locals.runtime?.env;

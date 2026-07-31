@@ -17,10 +17,10 @@ const DEMO_VISITOR_KEY = 'habitrack_demo_visitor';
 
 // Habits are generated relative to today, so the demo never looks stale: streaks
 // stay current and the calendars always have this month's data.
-//   every  — weekdays it's scheduled on (JS numbers, 0=Sun)
-//   since  — days back the habit started
-//   hit    — chance a scheduled day got done (1 = a perfect streak)
-//   slips  — for quits: how many days back each slip was
+//   every: weekdays it's scheduled on (JS numbers, 0=Sun)
+//   since: days back the habit started
+//   hit:   chance a scheduled day got done (1 = a perfect streak)
+//   slips: for quits, how many days back each slip was
 const SEED = [
   { name: 'Morning run', emoji: '🏃', color: 'emerald', every: [1, 2, 3, 4, 5], since: 74, hit: 0.86, streak: 12 },
   { name: 'Read 20 pages', emoji: '📖', color: 'blue', every: [0, 1, 2, 3, 4, 5, 6], since: 96, hit: 0.79, streak: 5 },
@@ -32,7 +32,7 @@ const SEED = [
   { name: 'No doomscrolling', emoji: '📱', color: 'orange', since: 52, kind: 'streak', slips: [9, 23] },
 ];
 
-// Deterministic pseudo-random in [0,1) — same demo for everyone, and stable across
+// Deterministic pseudo-random in [0,1): same demo for everyone, and stable across
 // reloads (Math.random would reshuffle the history on every visit).
 function rand(n) {
   const x = Math.sin(n * 12.9898) * 43758.5453;
@@ -62,8 +62,8 @@ export function demoSeed() {
       for (const back of h.slips) days.push(addDays(today, -back));
     } else {
       // Fill the scheduled days counting back from today. Streaks are measured in
-      // SCHEDULED days, not calendar days, so this has to index scheduled days —
-      // counting calendar days would let a rest day swallow the intended break and
+      // SCHEDULED days, not calendar days, so this has to index scheduled days.
+      // Counting calendar days would let a rest day swallow the intended break and
       // inflate the streak.
       const sdays = scheduledDays(start, today, sched);
       sdays.forEach((d, k) => {
@@ -121,7 +121,7 @@ export async function trackDemoVisit() {
 }
 
 // Stand-in for `apiFetch`, same {ok,status,data} contract. It only computes the
-// response the real endpoint would return — persistence is handled by the caller
+// response the real endpoint would return. Persistence is handled by the caller
 // saving its own state after each render, so the two can't drift.
 //
 // `habits` is the live array, needed to mint the next id.

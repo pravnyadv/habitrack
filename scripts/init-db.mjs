@@ -67,12 +67,12 @@ await sql`
   )
 `;
 // A share is pending until the recipient accepts it (accepted_at set). New rows
-// are created NULL (pending). No grandfathering — this must stay idempotent, and
+// are created NULL (pending). No grandfathering: this must stay idempotent, and
 // a blanket UPDATE would auto-accept real pending invites on every re-run.
 await sql`ALTER TABLE profile_shares ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ`;
 
 // Demo traffic: one row per visit to /profile/demo. visitor_id is a random id the
-// visitor's browser keeps in localStorage — no login, no IP, no fingerprint — so
+// visitor's browser keeps in localStorage (no login, no IP, no fingerprint), so
 // COUNT(DISTINCT visitor_id) is "unique browsers that kept the id".
 await sql`
   CREATE TABLE IF NOT EXISTS demo_visits (
@@ -87,9 +87,9 @@ await sql`CREATE INDEX IF NOT EXISTS demo_visits_created_at_idx ON demo_visits (
 await sql`ALTER TABLE habits ADD COLUMN IF NOT EXISTS schedule TEXT NOT NULL DEFAULT '0,1,2,3,4,5,6'`;
 
 // Habit kind:
-//   'normal' — build a habit: default not-done, you check off each scheduled day.
-//   'streak' — quit/abstain: every day is auto-clean from start_date; a checkin
-//              row means a SLIP (e.g. "smoked today"), no row = clean. Lets these
+//   'normal': build a habit. Default not-done, you check off each scheduled day.
+//   'streak': quit/abstain. Every day is auto-clean from start_date; a checkin
+//             row means a SLIP (e.g. "smoked today"), no row = clean. Lets these
 //              accrue with zero daily interaction.
 await sql`ALTER TABLE habits ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'normal'`;
 // start_date: when tracking/the streak began (backdated at create time). For
@@ -135,7 +135,7 @@ await sql`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NU
 // Add habits.profile_id with the default profile as the column default, so old
 // code that inserts without it still lands in the default profile.
 await sql`ALTER TABLE habits ADD COLUMN IF NOT EXISTS profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE`;
-// DDL can't bind params — defaultId is our own integer, safe to inline.
+// DDL can't bind params. defaultId is our own integer, safe to inline.
 await sql.query(`ALTER TABLE habits ALTER COLUMN profile_id SET DEFAULT ${defaultId}`);
 await sql`UPDATE habits SET profile_id = ${defaultId} WHERE profile_id IS NULL`;
 await sql`CREATE INDEX IF NOT EXISTS idx_habits_profile ON habits (profile_id)`;

@@ -13,7 +13,7 @@ export function realtimeConfig(env) {
 
 // Fire a best-effort Pusher event on the `habitrack` channel. `socketId`, when
 // provided, excludes the originating client so it doesn't re-apply its own
-// change. Never throws — realtime is non-critical and must not break the write.
+// change. Never throws: realtime is non-critical and must not break the write.
 export async function broadcast(env, profileId, payload, socketId) {
   const cfg = realtimeConfig(env);
   if (!cfg) return;
@@ -32,6 +32,6 @@ export async function broadcast(env, profileId, payload, socketId) {
 
     await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
   } catch {
-    // swallow — best-effort
+    // swallow, best-effort
   }
 }

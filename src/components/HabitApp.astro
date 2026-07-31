@@ -6,20 +6,20 @@ import { iso, isStreak } from '../lib/compute.js';
 import { weekHeaderHtml, habitListHtml, todayCardData, tabButtonClass, todayInZone } from '../lib/render.js';
 
 // The whole habit app (list, calendars, Today card, add/edit form), rendered by
-// two routes that fetch their own data:
-//   index.astro  — the signed-in app. `viewing` is null; the client may still
+// three routes that fetch their own data:
+//   index.astro:   the signed-in app. `viewing` is null; the client may still
 //                  enter read-only share-preview mode from localStorage.
-//   p/[id].astro — a PUBLIC profile, no session at all. `viewing` is SSR'd, which
+//   p/[id].astro:  a PUBLIC profile, no session at all. `viewing` is SSR'd, which
 //                  puts the page in read-only mode from the first paint and tells
 //                  the client that `initialHabits` belongs to the viewed profile.
-//   profile/demo  — the DEMO, no session. Fully WRITABLE, but every mutation is
+//   profile/demo:  the DEMO, no session. Fully WRITABLE, but every mutation is
 //                  applied in localStorage by lib/demo.js instead of the API, so
 //                  strangers can use the whole app without touching the database.
 // One `mode` decides the surface, so there are no illegal combinations and each
 // branch below reads it rather than re-deriving from a pile of booleans:
-//   'app'    — signed in, writes to the API
-//   'public' — read-only, session-less  (`viewing` names whose profile it is)
-//   'demo'   — writable, session-less, writes to localStorage
+//   'app':    signed in, writes to the API
+//   'public': read-only, session-less (`viewing` names whose profile it is)
+//   'demo':   writable, session-less, writes to localStorage
 // props: mode, initialHabits=[], initialProfile={id,name,admin}|null, viewing={id,name}|null
 const { mode = 'app', initialHabits = [], initialProfile = null, viewing = null } = Astro.props;
 const publicView = mode === 'public';
@@ -61,8 +61,15 @@ const ssrToday = todayCardData(habits, today);
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{mode === 'demo' ? 'Demo — Habitrack' : publicView ? `${viewing.name}’s habits — Habitrack` : 'Habitrack — build better habits'}</title>
-    <meta name="description" content="A simple, beautiful habit tracker." />
-    <meta name="robots" content="noindex, nofollow" />
+    <meta
+      name="description"
+      content={mode === 'demo'
+        ? 'Try Habitrack with no signup: per-habit schedules, quit streaks and contribution heatmaps. Sample data, and your changes stay in your browser.'
+        : 'A simple, beautiful habit tracker.'}
+    />
+    <!-- The demo is the only indexable page (see public/robots.txt): hardcoded
+         data, no session. The app and public profiles stay out of search. -->
+    <meta name="robots" content={mode === 'demo' ? 'index, follow' : 'noindex, nofollow'} />
 
     <!-- PWA / iOS home-screen -->
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -86,7 +93,7 @@ const ssrToday = todayCardData(habits, today);
       }
       // The server renders the list for the default tab and its own data. Where the
       // client knows better, hide that markup (CSS, see global.css) so it never
-      // flashes the wrong content — the module script fills it in on boot and clears
+      // flashes the wrong content. The module script fills it in on boot and clears
       // the flag. Runs before <body> is parsed, so nothing wrong is ever painted.
       try {
         const mode = document.documentElement.dataset.mode;
@@ -168,7 +175,7 @@ const ssrToday = todayCardData(habits, today);
         <button type="button" data-tab="streak" class={tabButtonClass(false)}>Streaks</button>
       </div>
 
-      <!-- Today progress: one ring per track — habits (done/due today) and quits
+      <!-- Today progress: one ring per track, habits (done/due today) and quits
            (clean vs slipped today). Shows on both tabs; each ring appears only if
            that track has anything to show today. Rings are filled by JS. -->
       <section id="today-card" class:list={['mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:mb-6 sm:p-5', ssrToday.show ? '' : 'hidden']}>
@@ -280,7 +287,7 @@ const ssrToday = todayCardData(habits, today);
 
       // ---- constants ---------------------------------------------------------
       // Emoji suggestions for the habit picker, as [emoji, searchKeywords]. The
-      // popup scrolls and is searchable, so this list can grow freely — add a new
+      // popup scrolls and is searchable, so this list can grow freely: add a new
       // ['🙂','keyword synonyms'] entry to the relevant category row below. Keep
       // each emoji listed once (keywords can cover multiple contexts).
       const EMOJIS = [
@@ -392,7 +399,7 @@ const ssrToday = todayCardData(habits, today);
         // Streak habits: every day is clean from the start date; habit.days = slips.
         const streak = isStreak(habit);
 
-        // habit's active-from date — nothing before it can be "missed" (the habit
+        // habit's active-from date. Nothing before it can be "missed" (the habit
         // didn't exist / streak hadn't begun). Streaks start at their start date;
         // normal habits use the shared earlier-of-created/first-checkin helper.
         const activeFrom = streak ? startOf(habit) : activeFromOf(habit);
@@ -409,12 +416,12 @@ const ssrToday = todayCardData(habits, today);
         const HGT = '78%';                   // tile height within the square cell
         const tint = `${color}20`;           // ~12% tint of the habit color (missed)
         const CTR = 'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2';
-        // done numbers are 500 (heavier); every other state is 400 — weight is
+        // done numbers are 500 (heavier); every other state is 400. Weight is
         // added per-state below, not baked into NUM.
         const NUM = `${CTR} z-10 text-sm tabular-nums`;
 
         // Cells are inert <div>s when read-only (viewing a share) OR older than the
-        // backfill window — history you can see but not rewrite. Within the window
+        // backfill window: history you can see but not rewrite. Within the window
         // (and today) they're tappable buttons.
         const ro = !!viewing;
         const editableDay = (ds) => !ro && ds >= BACKFILL_START && ds <= TODAY;
@@ -462,15 +469,15 @@ const ssrToday = todayCardData(habits, today);
           if (done) {
             cells += capsuleCell(ds, d, (x) => set.has(x), ds + ' · done');
           } else if (isToday && scheduled) {
-            // today, not done — transparent tile with an inset ring in habit color
+            // today, not done: transparent tile with an inset ring in habit color
             const fill = `<span class="${CTR}" style="width:80%;height:${HGT};border-radius:${R}px;box-shadow:inset 0 0 0 1.5px ${color}"></span>`;
             cells += `${cellOpen(ds, ds)}${fill}<span class="${NUM} font-normal" style="color:${colorDark}">${d}</span>${cellClose(ds)}`;
           } else if (scheduled && !future && !beforeActive) {
-            // missed (past, active, scheduled, not done) — light tint, discrete tile
+            // missed (past, active, scheduled, not done): light tint, discrete tile
             const fill = `<span class="${CTR}" style="width:80%;height:${HGT};background:${tint};border-radius:10px"></span>`;
             cells += `${cellOpen(ds, ds + ' · missed')}${fill}<span class="${NUM} font-normal" style="color:${colorDark}">${d}</span>${cellClose(ds)}`;
           } else {
-            // before-created / future / rest day — no fill, legible-but-subordinate
+            // before-created / future / rest day: no fill, legible-but-subordinate
             // gray. The ONLY state that uses gray (never a global default).
             cells += `<div class="relative flex aspect-square items-center justify-center text-sm font-normal tabular-nums text-slate-500 dark:text-slate-400">${d}</div>`;
           }
@@ -539,7 +546,7 @@ const ssrToday = todayCardData(habits, today);
 
         // Controls (reorder / edit / delete) sit at the TOP of the expanded panel
         // so they're reachable without scrolling past the calendar + graph. (Trial
-        // placement — was previously at the bottom.)
+        // placement; was previously at the bottom.)
         const controls = viewing ? '' : `<div class="mb-5 flex items-center justify-between gap-2">
               <div class="flex items-center gap-1.5">
                 ${reorderBtn('up', habit.id)}
@@ -977,13 +984,13 @@ const ssrToday = todayCardData(habits, today);
         if (habitForm.classList.contains('hidden')) openCreateForm();
         else habitForm.classList.add('hidden');
       });
-      // permanent bottom button — same fresh "create" form
+      // permanent bottom button, same fresh "create" form
       addBottom.addEventListener('click', openCreateForm);
 
       // ---- PWA service worker ------------------------------------------------
       // Registering the SW (+ manifest) is what makes the browser offer its own
       // install affordance beside the URL bar. We intentionally have no in-app
-      // install button — we rely on the browser's native install icon.
+      // install button; we rely on the browser's native install icon.
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
       }
@@ -1029,7 +1036,7 @@ const ssrToday = todayCardData(habits, today);
         loadError.classList.add('hidden');
         if (readOnly()) {
           // Banner on, every add/edit affordance off. (The account chip is hidden by
-          // AppHeader.) Nothing needs undoing in the writable case — the SSR markup
+          // AppHeader.) Nothing needs undoing in the writable case, the SSR markup
           // already renders in that state.
           document.getElementById('view-banner-name').textContent = viewing.name;
           viewBanner.classList.remove('hidden'); viewBanner.classList.add('flex');
@@ -1040,11 +1047,11 @@ const ssrToday = todayCardData(habits, today);
         render();
         initRealtime();
         // Don't pitch "install Habitrack" to someone browsing a public profile or the
-        // demo — installing would drop them on the login gate, not where they are.
+        // demo: installing would drop them on the login gate, not where they are.
         if (!publicView && !demoMode) setTimeout(maybeShowIosHint, 1200); // let content paint first
       }
 
-      // Cookie-authed same-origin fetch — no localStorage token needed (an
+      // Cookie-authed same-origin fetch, no localStorage token needed (an
       // installed PWA often has none). Reload on a day rollover so dates are fresh.
       async function refresh() {
         if (iso(new Date()) !== TODAY) { location.reload(); return; }
@@ -1111,7 +1118,7 @@ const ssrToday = todayCardData(habits, today);
 
       let realtimeStarted = false;
       async function initRealtime() {
-        // Public views have no profile but do have a channel to watch — Pusher
+        // Public views have no profile but do have a channel to watch. Pusher
         // channels are public (key + cluster only), so this works unauthenticated.
         // The demo has no server-side profile at all, so there's nothing to watch.
         if (realtimeStarted || demoMode || (!profile && !publicView)) return;
@@ -1140,7 +1147,7 @@ const ssrToday = todayCardData(habits, today);
           return;
         }
         if (publicView) {
-          // The SSR'd habits already belong to the viewed profile — render now.
+          // The SSR'd habits already belong to the viewed profile, so render now.
           habits = initialHabits;
           enterApp();
           return;
@@ -1158,12 +1165,12 @@ const ssrToday = todayCardData(habits, today);
           return;
         }
 
-        // view-mode: SSR data is our own, not the viewed profile — fetch it.
+        // view-mode: SSR data is our own, not the viewed profile, so fetch it.
         let r = await fetchHabits();
         if (r === 'forbidden') { localStorage.removeItem(VIEW); viewing = null; habits = initialHabits; enterApp(); return; }
         if (r === 'ok') { enterApp(); return; }
         if (r === 'unauthorized') { location.href = '/profile'; return; }
-        loadError.classList.remove('hidden'); // network error — keep shell, show error
+        loadError.classList.remove('hidden'); // network error: keep shell, show error
       }
       boot();
     </script>

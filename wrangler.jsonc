@@ -1,6 +1,6 @@
 {
-  // Pages projects do NOT support account_id here — pinned via
-  // CLOUDFLARE_ACCOUNT_ID in the npm "deploy" script (Praveen account).
+  // Pages projects do NOT support account_id here, so the account comes from
+  // CLOUDFLARE_ACCOUNT_ID, which the npm "deploy" script requires to be set.
   "name": "habitrack",
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],

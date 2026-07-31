@@ -8,7 +8,7 @@
     "build": "astro build",
     "preview": "wrangler pages dev dist",
     "db:init": "node scripts/init-db.mjs",
-    "deploy": "astro build && CLOUDFLARE_ACCOUNT_ID=0890b69d5033a6d451ec1b984d7476d0 wrangler pages deploy dist --project-name habitrack --branch main",
+    "deploy": "astro build && : \"${CLOUDFLARE_ACCOUNT_ID:?set CLOUDFLARE_ACCOUNT_ID so this cannot deploy to the wrong Cloudflare account}\" && wrangler pages deploy dist --project-name habitrack --branch main",
     "test": "node --test \"test/**/*.test.js\"",
     "splash": "node scripts/gen-splash.mjs"
   },

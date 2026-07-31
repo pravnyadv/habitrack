@@ -41,7 +41,7 @@ export default function Manage({ me, origin = '', profiles = [], shares: initial
     const { ok, data } = await apiFetch('/api/profiles/' + me.id, { method: 'PATCH', body: { currentPasscode: curPass, newPasscode: newPass } });
     if (!ok) { setPassMsg({ text: (data && data.error) || 'Could not change passcode.', ok: false }); return; }
     // Changing the passcode revokes old tokens; the server hands back a fresh one
-    // for this session — keep the localStorage copy in sync so we stay signed in.
+    // for this session, so keep the localStorage copy in sync to stay signed in.
     if (data && data.token) localStorage.setItem(TK, data.token);
     setCurPass(''); setNewPass(''); setPassMsg({ text: 'Passcode changed.', ok: true });
   }
