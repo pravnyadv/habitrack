@@ -189,12 +189,24 @@ On any check-in / add / delete / edit (`update`) / reorder, the endpoint calls `
 ## Commands
 
 ```bash
+npm test           # node --test over test/ — pure logic, no DB, no network
 npm run dev        # astro dev (HMR) — uses .dev.vars
 npm run db:init    # create/upgrade schema on Neon (idempotent), seeds if empty
 npm run build      # astro build → dist/
 npm run preview    # wrangler pages dev dist (real Workers runtime, local)
 npm run deploy     # build + deploy to Cloudflare Pages (Praveen account, pinned via CLOUDFLARE_ACCOUNT_ID)
 ```
+
+## Tests
+
+`npm test` runs `node --test` over `test/` (no dependencies, no DB, no network). It covers the **pure logic only**: date arithmetic, the shared habit-creation rules, `stats()`/`streakStats()`, and the demo sandbox. Endpoints, SSR pages and the DOM are not covered and are still verified by hand.
+
+Fixtures are built relative to `compute.js`'s own `TODAY`, so the suite is deterministic on any day and in any timezone. Two suites are worth keeping alive as the app changes:
+
+- **The kind-inversion invariant** (`compute.test.js`) asserts that the *same* `days` array reads as 3 days done for a `normal` habit and 3 slips for a `streak`. That inversion is the one bug in this codebase that produces plausible-looking wrong numbers instead of an error.
+- **`demoApi` create parity** (`demo.test.js`) derives what `POST /api/habits` would return straight from `normalizeSchedule`/`resolveStartDate`/`scheduledDays` and requires the sandbox to agree across 12 input shapes. The rules are shared now, but this is what catches it if someone re-inlines them.
+
+The suite was mutation-checked: reverting the CSV fix, the weekday filter, the backdate cap, the streak-forces-daily rule, the today's-slip grace, or the seed's defensive copy each fails at least one test.
 
 ## Conventions / gotchas
 

@@ -26,6 +26,8 @@ A personal habit tracker, built as a cleaner take on [beaverhabits](https://gith
 
 **Offline-aware PWA.** Installable, with an online-first service worker and a static offline page.
 
+**Tested where it counts.** `npm test` runs `node --test` with no dependencies over the pure logic: date handling, the shared habit-creation rules, streak maths, and the demo sandbox. It includes a parity suite that pins the demo's local writes to what the real endpoint derives, and an invariant test for the one bug class here that yields plausible wrong numbers rather than an error (a check-in row means *done* for a habit and *slipped* for a quit).
+
 ## Stack
 
 | | |
