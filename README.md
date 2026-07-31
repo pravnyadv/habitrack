@@ -1,4 +1,4 @@
-# Habitrack 🦫
+# Habitrack
 
 A personal habit tracker, built as a cleaner take on [beaverhabits](https://github.com/daya0576/beaverhabits). Multiple profiles, realtime sync across devices, installable as a PWA. Runs on Cloudflare Pages with a Neon Postgres backend.
 
