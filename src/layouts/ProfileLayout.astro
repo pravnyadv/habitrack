@@ -7,7 +7,13 @@ import SplashLinks from '../components/SplashLinks.astro';
 //   admin: also show the admin-only "Demo stats" tab. Every tabbed page passes
 //          this so the nav doesn't gain/lose an item as you move between tabs,
 //           and so non-admins are never shown a tab that just redirects them.
-const { pageTitle = 'Profile — Habitrack', tab, admin = false } = Astro.props;
+//   mode:  'demo' for the session-less demo overview. Stamped on <html> so
+//          AppHeader's script knows not to show an account chip or heartbeat from
+//          a page that is nobody's app, it sends Back to the demo rather than to
+//          the real app, and it is the one indexable surface (same rule as
+//          HabitApp, see public/robots.txt). Unset on every other page.
+const { pageTitle = 'Profile — Habitrack', tab, admin = false, mode } = Astro.props;
+const demo = mode === 'demo';
 const TABS = [
   ['overview', 'Overview', '/profile'],
   ['manage', 'Manage', '/profile/manage'],
@@ -16,12 +22,12 @@ const TABS = [
 ];
 ---
 
-<html lang="en" class="h-full">
+<html lang="en" class="h-full" data-mode={mode}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{pageTitle}</title>
-    <meta name="robots" content="noindex, nofollow" />
+    <meta name="robots" content={demo ? 'index, follow' : 'noindex, nofollow'} />
     <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#020617" media="(prefers-color-scheme: dark)" />
     <SplashLinks />
@@ -34,7 +40,7 @@ const TABS = [
   </head>
   <body class="h-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans antialiased">
     <div class="mx-auto max-w-3xl px-4 pb-24 pt-8 sm:pt-12">
-      <AppHeader showHabits={!!tab} />
+      <AppHeader showHabits={!!tab || demo} habitsHref={demo ? '/profile/demo' : '/'} />
 
       {tab && (
         <nav class="mb-6 flex gap-6 border-b border-slate-200 dark:border-slate-800">

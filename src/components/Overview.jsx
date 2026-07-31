@@ -3,13 +3,18 @@ import {
   TODAY, iso, addDays, schedOf, stats, windowStart, activeFromOf,
   heatmapBlock, githubGraph, buildExportRecords, toCSV, toJSON, downloadFile, connectRealtime, apiFetch,
 } from '../lib/compute.js';
+import { loadDemo } from '../lib/demo.js';
 
 const VIEW = 'habitrack_viewing';
 // aggregate completion levels: 1-25 / 26-50 / 51-75 / 76-100 %
 const AGG_LEVELS = ['#6ee7b7', '#34d399', '#10b981', '#047857'];
 
-// props: initialHabits (SSR'd own habits), profileId (own id, for the realtime channel)
-export default function Overview({ initialHabits = [], profileId }) {
+// props: initialHabits (SSR'd own habits), profileId (own id, for the realtime channel),
+//        mode ('app' | 'demo'). In demo mode there is no session and no server-side
+//        profile: the data is the visitor's localStorage sandbox, so that is what gets
+//        read, and there is nothing to authenticate against or subscribe to.
+export default function Overview({ initialHabits = [], profileId, mode = 'app' }) {
+  const demo = mode === 'demo';
   const [habits, setHabits] = useState(initialHabits);
   const [filter, setFilter] = useState('all');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -18,6 +23,9 @@ export default function Overview({ initialHabits = [], profileId }) {
   const heatRef = useRef(null);
 
   async function load(viewId) {
+    // The demo has no API to call. An untouched sandbox is simply absent, and the
+    // SSR'd seed is already right for that case, so leave state alone.
+    if (demo) { const local = loadDemo(); if (local) setHabits(local); return; }
     const url = viewId ? `/api/habits?profile=${viewId}` : '/api/habits';
     const { ok, status, data } = await apiFetch(url);
     if (status === 401) { location.href = '/profile'; return; }
@@ -27,13 +35,16 @@ export default function Overview({ initialHabits = [], profileId }) {
 
   useEffect(() => {
     let v = null;
-    try { v = JSON.parse(localStorage.getItem(VIEW) || 'null'); } catch {}
+    // Share-preview is a signed-in concept; the demo can never be viewing anyone.
+    if (!demo) { try { v = JSON.parse(localStorage.getItem(VIEW) || 'null'); } catch {} }
     setViewing(v);
     const dataId = v ? v.id : profileId;
-    // Always fetch fresh on mount. The SSR snapshot can be stale on a long-lived
-    // PWA (which keeps the page in memory for days). Cookie-authed, no token needed.
+    // Always read fresh on mount. The SSR snapshot can be stale on a long-lived
+    // PWA (which keeps the page in memory for days), and in the demo it is the
+    // pristine seed while the visitor may have changed their sandbox since.
     load(v ? v.id : null);
-    (async () => {
+    // No realtime in the demo: there is no server-side profile to have a channel.
+    if (!demo) (async () => {
       try {
         const { ok, data: cfg } = await apiFetch('/api/rt-config');
         if (!ok || !cfg.enabled) return;

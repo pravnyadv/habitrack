@@ -1,0 +1,18 @@
+---
+import ProfileLayout from '../../../layouts/ProfileLayout.astro';
+import Overview from '../../../components/Overview.jsx';
+import { demoSeed } from '../../../lib/demo.js';
+
+// The demo's Overview, so a visitor with no account can still see the stats and
+// heatmap screen. Same island as the signed-in /profile tab; the difference is
+// where the data comes from, which the island decides off `mode`.
+//
+// The seed is SSR'd so the page paints with real content (and so a crawler sees
+// it, this being an indexable surface). It is the pristine seed, though: if the
+// visitor has edited their sandbox, the island swaps in localStorage on mount.
+const seed = demoSeed();
+---
+
+<ProfileLayout pageTitle="Demo overview — Habitrack" mode="demo">
+  <Overview client:load mode="demo" initialHabits={seed} />
+</ProfileLayout>

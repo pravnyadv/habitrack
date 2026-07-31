@@ -11,6 +11,7 @@ import { demoSeed, demoApi } from '../src/lib/demo.js';
 import {
   TODAY, DAILY, COLORS, addDays, dow, schedOf, isStreak, stats,
   normalizeSchedule, resolveStartDate, scheduledDays,
+  activeFromOf, windowStart, githubGraph, buildExportRecords,
 } from '../src/lib/compute.js';
 
 describe('demoSeed', () => {
@@ -226,5 +227,49 @@ describe('demoApi create matches the server rules', () => {
     const r = await demoApi('/api/habits', { method: 'POST', body: { name: 'h', startDate: addDays(TODAY, -14) } }, seed);
     assert.equal(r.data.days.length, 15);
     assert.equal(stats(r.data).current, 15);
+  });
+});
+
+// /profile/demo/overview renders the same Overview island as the signed-in tab,
+// fed from the seed (then the visitor's sandbox) instead of the database. The
+// island computes with compute.js helpers rather than anything demo-specific, so
+// the seed has to satisfy every helper it reaches. Without this, the demo overview
+// can break while every other demo test still passes.
+describe('the seed feeds the Overview', () => {
+  const seed = demoSeed();
+  const normal = seed.filter((h) => !isStreak(h));
+
+  test('has normal habits, so the demo overview is never an empty state', () => {
+    assert.ok(normal.length >= 3, `expected several normal habits, got ${normal.length}`);
+  });
+
+  test('every row resolves an active-from date the aggregate can compare', () => {
+    for (const h of seed) {
+      const from = activeFromOf(h);
+      assert.match(from, /^\d{4}-\d{2}-\d{2}$/, `${h.name} -> ${from}`);
+      assert.ok(from <= TODAY, `${h.name} is active from the future: ${from}`);
+    }
+  });
+
+  test('every row has a schedule the day tally can read', () => {
+    for (const h of seed) {
+      const sched = schedOf(h);
+      assert.ok(sched.size > 0, `${h.name} has no scheduled days`);
+      for (const d of sched) assert.ok(Number.isInteger(d) && d >= 0 && d <= 6, `${h.name} -> ${d}`);
+    }
+  });
+
+  test('per-habit graph and the export both build from a seed row', () => {
+    for (const h of normal) assert.ok(githubGraph(h).length > 0, `${h.name} produced no graph`);
+    assert.equal(buildExportRecords(normal).length > 0, true);
+  });
+
+  test('seed history lands inside the 12-month window the aggregate walks', () => {
+    const earliest = windowStart();
+    assert.ok(earliest < TODAY);
+    assert.ok(
+      normal.some((h) => h.days.some((d) => d >= earliest && d <= TODAY)),
+      'no seed check-in falls in the aggregate window, so every stat would read zero',
+    );
   });
 });

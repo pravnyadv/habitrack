@@ -4,7 +4,7 @@ A personal habit tracker, built as a cleaner take on [beaverhabits](https://gith
 
 **Live:** https://habitrack-6yj.pages.dev
 
-**Try the demo:** https://habitrack-6yj.pages.dev/profile/demo. No signup, no login. It loads sample habits and the whole app works: add, edit, delete, reorder, check in. Your changes are kept in your browser's localStorage and never reach the server, so you can't touch anyone's real data. Reset puts the sample data back.
+**Try the demo:** https://habitrack-6yj.pages.dev/profile/demo. No signup, no login. It loads sample habits and the whole app works: add, edit, delete, reorder, check in, and the Overview screen with the stats and heatmaps. Your changes are kept in your browser's localStorage and never reach the server, so you can't touch anyone's real data. Reset puts the sample data back.
 
 ## Features
 
@@ -61,6 +61,7 @@ src/
       create.astro       #   Create      new profile
       manage.astro       #   Manage      rename, passcode, shares, admin presence
       demo.astro         #   Demo        no login, writes go to localStorage
+      demo/overview.astro#   Demo        the same Overview island, fed from the sandbox
       stats.astro        #   Demo stats  admin only, demo traffic
     api/                 # habits, checkins, login/logout/session, profiles,
                          # shares, heartbeat, presence, rt-config, demo-visit
