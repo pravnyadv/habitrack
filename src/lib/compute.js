@@ -84,11 +84,13 @@ export function activeFromOf(habit) {
 export const isStreak = (h) => h.kind === 'streak';
 
 // The day a habit's tracking/streak begins: explicit start_date, else created day.
-export function startOf(habit) {
+// `today` is only the last-resort fallback; pass it when rendering server-side,
+// where the module-level TODAY is the Worker's UTC date rather than the visitor's.
+export function startOf(habit, today = TODAY) {
   const sd = (habit.start_date || '').slice(0, 10);
   if (sd) return sd;
   const created = (habit.created_at || '').slice(0, 10);
-  return created || TODAY;
+  return created || today;
 }
 
 // Clean-streak stats for a 'streak' habit. days = slip days; every other day in
@@ -96,19 +98,19 @@ export function startOf(habit) {
 // TODAY is graced (skipped, not counted) rather than breaking the streak — the
 // day isn't over, mirroring how normal-habit streaks treat today. longest =
 // longest clean run; total = total clean days; slips = count.
-export function streakStats(habit) {
+export function streakStats(habit, today = TODAY) {
   const slips = new Set(habit.days);
-  const start = startOf(habit);
+  const start = startOf(habit, today);
   let current = 0;
-  for (let d = TODAY; d >= start; d = addDays(d, -1)) {
+  for (let d = today; d >= start; d = addDays(d, -1)) {
     if (slips.has(d)) {
-      if (d === TODAY) continue; // today's slip isn't final — grace it
+      if (d === today) continue; // today's slip isn't final — grace it
       break;
     }
     current++;
   }
   let longest = 0, run = 0, total = 0, slipCount = 0;
-  for (let d = start; d <= TODAY; d = addDays(d, 1)) {
+  for (let d = start; d <= today; d = addDays(d, 1)) {
     total++;
     if (slips.has(d)) { slipCount++; run = 0; }
     else { run++; if (run > longest) longest = run; }
@@ -117,23 +119,23 @@ export function streakStats(habit) {
 }
 
 // ---- stats (only scheduled days count; streaks skip rest days) -----------
-export function stats(habit) {
-  if (isStreak(habit)) return streakStats(habit);
+export function stats(habit, today = TODAY) {
+  if (isStreak(habit)) return streakStats(habit, today);
   const set = new Set(habit.days);
   const sched = schedOf(habit);
   const due = (d) => sched.has(dow(d));
 
   let cur = 0;
-  for (let d = TODAY, guard = 0; guard < 800; d = addDays(d, -1), guard++) {
+  for (let d = today, guard = 0; guard < 800; d = addDays(d, -1), guard++) {
     if (!due(d)) continue;
     if (set.has(d)) cur++;
-    else if (d === TODAY) continue;
+    else if (d === today) continue;
     else break;
   }
 
-  const start = habit.days.length ? [...set].sort()[0] : TODAY;
+  const start = habit.days.length ? [...set].sort()[0] : today;
   let longest = 0, run = 0;
-  for (let d = start; d <= TODAY; d = addDays(d, 1)) {
+  for (let d = start; d <= today; d = addDays(d, 1)) {
     if (!due(d)) continue;
     if (set.has(d)) { run++; if (run > longest) longest = run; }
     else run = 0;
@@ -141,7 +143,7 @@ export function stats(habit) {
 
   let dueCount = 0, hit = 0;
   for (let i = 0; i < 30; i++) {
-    const d = addDays(TODAY, -i);
+    const d = addDays(today, -i);
     if (due(d)) { dueCount++; if (set.has(d)) hit++; }
   }
   return { current: cur, longest, total: set.size, rate30: dueCount ? Math.round((hit / dueCount) * 100) : 0 };
