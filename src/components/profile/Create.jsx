@@ -15,7 +15,7 @@ export default function Create({ profiles = [] }) {
     setErr('');
     if (!n) { setErr('Name is required.'); return; }
     if (pass.length < 6) { setErr('Passcode must be at least 6 characters.'); return; }
-    // Names aren't unique (ids are), but a duplicate is confusing — soft-warn once.
+    // Names aren't unique (ids are), but a duplicate is confusing, so soft-warn once.
     if (!dupOk && profiles.some((p) => p.name.trim().toLowerCase() === n.toLowerCase())) {
       setErr(`“${n}” is already taken — tap Create again to use it anyway.`);
       setDupOk(true);

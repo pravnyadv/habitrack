@@ -58,7 +58,7 @@ export async function PATCH({ params, request, locals, cookies }) {
   }
 
   // Publishing exposes this profile's habits to anyone, so only the owner can
-  // flip it — an admin renaming someone doesn't get to publish them.
+  // flip it. An admin renaming someone doesn't get to publish them.
   if (body.isPublic != null) {
     if (!isSelf) return json({ error: 'Only the profile owner can change visibility' }, 403);
     fields.isPublic = body.isPublic === true;

@@ -1,2 +1,13 @@
+# Everything here is either the signed-in app or someone's personal data, so it
+# stays out of search. Public profiles at /p/<id> mean "anyone with the link",
+# not "indexed". The one exception is /profile/demo: hardcoded sample data, no
+# session, nothing real to leak, and worth being findable.
+#
+# /_astro/ and the icons are allowed too, otherwise a crawler can fetch the demo
+# HTML but not the CSS and JS it needs to render the page.
 User-agent: *
+Allow: /profile/demo
+Allow: /_astro/
+Allow: /icon.svg
+Allow: /manifest.webmanifest
 Disallow: /

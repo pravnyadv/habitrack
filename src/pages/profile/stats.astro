@@ -10,7 +10,7 @@ const env = Astro.locals.runtime?.env;
 const pid = Astro.locals.profileId;
 if (!pid) return Astro.redirect('/profile');
 
-// All four reads go out together — each Neon call is its own HTTP round trip, and
+// All four reads go out together: each Neon call is its own HTTP round trip, and
 // awaiting the admin check first would put the other three a generation behind it.
 // A non-admin pays three wasted queries, which beats every admin load paying the
 // extra latency.
@@ -28,7 +28,7 @@ const day = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekd
 const peak = Math.max(1, ...byDay.map((d) => d.visits));
 const TILE = 'rounded-xl bg-slate-50 px-3 py-2.5 text-center dark:bg-slate-800/50';
 const ROW = 'flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/50';
-// [value, label, isCount] — counts render big, timestamps render small.
+// [value, label, isCount]. Counts render big, timestamps render small.
 const TILES = [
   [totals.visitors, 'Unique visitors', true],
   [totals.visits, 'Total visits', true],

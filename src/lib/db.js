@@ -32,7 +32,7 @@ export async function getPublicProfile(sql, id) {
   return rows[0] || null;
 }
 
-// Just the token_version (cheap, indexed by PK) — used by verifyToken to check a
+// Just the token_version (cheap, indexed by PK), used by verifyToken to check a
 // token hasn't been revoked. Returns null if the profile no longer exists.
 export async function getTokenVersion(sql, id) {
   const rows = await sql`SELECT token_version FROM profiles WHERE id = ${id}`;
@@ -165,7 +165,7 @@ export async function deleteShare(sql, ownerId, viewerId) {
 
 // True if viewerId may read ownerId's data: either ownerId is public (anyone,
 // including an anonymous caller with viewerId = null) or an *accepted* share
-// exists. One round trip covers both — the EXISTS is simply false for a null
+// exists. One round trip covers both: the EXISTS is simply false for a null
 // viewer, so anonymous callers can only ever reach public profiles.
 export async function canViewProfile(sql, viewerId, ownerId) {
   const rows = await sql`
@@ -250,7 +250,7 @@ export async function createHabit(sql, profileId, name, emoji, color, schedule, 
 }
 
 // Seed check-ins for many days at once (used to backfill an existing streak on a
-// normal habit at creation). Idempotent — duplicate (habit, day) rows are ignored.
+// normal habit at creation). Idempotent: duplicate (habit, day) rows are ignored.
 export async function backfillCheckins(sql, habitId, days) {
   if (!days.length) return;
   await sql`
@@ -286,8 +286,8 @@ export async function updateHabit(sql, profileId, id, fields) {
 }
 
 // Set explicit sort_order = position for this profile's habits, in the given id
-// order. One atomic statement (a VALUES list joined by id) instead of N UPDATEs —
-// no partial reorder on failure, one round-trip. Ids not owned by the profile
+// order. One atomic statement (a VALUES list joined by id) instead of N UPDATEs, so
+// there is no partial reorder on failure, one round-trip. Ids not owned by the profile
 // simply don't match. Callers pass already-integer ids (see reorder.js).
 export async function reorderHabits(sql, profileId, ids) {
   if (!ids.length) return;

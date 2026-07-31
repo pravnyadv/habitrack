@@ -8,11 +8,14 @@ dist/
 # cloudflare / wrangler
 .wrangler/
 
-# secrets & env — never commit these
+# secrets & env, never commit these
 .env
 .env.*
 .dev.vars
 .dev.vars.*
+
+# local-only notes (account ids, machine-specific setup)
+CLAUDE.local.md
 
 # misc
 .DS_Store

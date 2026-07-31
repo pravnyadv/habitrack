@@ -13,7 +13,7 @@ const json = (data, status = 200) =>
 // is either public or has shared view access with the caller. Read-only either way
 // (this endpoint never writes); mutations only ever use the caller's own id.
 //
-// A ?profile= request needs no session at all — that's what makes a public profile
+// A ?profile= request needs no session at all. That's what makes a public profile
 // readable by an anonymous visitor at /p/<id>. `canViewProfile` still gates it, and
 // with no caller only a public target passes. Without ?profile= a session is
 // required, since "own habits" is meaningless otherwise.
@@ -43,7 +43,7 @@ export async function POST({ request, locals }) {
   const name = (body.name || '').trim();
   if (!name) return json({ error: 'Name is required' }, 400);
 
-  // Cap length — an emoji (incl. ZWJ sequences) never needs many chars; this
+  // Cap length. An emoji (incl. ZWJ sequences) never needs many chars; this
   // stops junk/markup being stored. Output is HTML-escaped at render too.
   const emoji = ((body.emoji || '✅').trim() || '✅').slice(0, 16);
   const color = (body.color || 'emerald').trim() || 'emerald';

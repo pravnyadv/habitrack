@@ -5,7 +5,7 @@ import { getSql, getPublicProfile, listHabits } from '../../lib/db.js';
 // A public profile, readable by anyone with no session (that's the whole point).
 // Not in middleware's GATED set, so no cookie is required to get here.
 //
-// Both reads fire in parallel — each Neon call is its own HTTP round trip. Loading
+// Both reads fire in parallel: each Neon call is its own HTTP round trip. Loading
 // habits for a profile that turns out to be private is harmless: we never send
 // them, we redirect instead.
 const id = Number(Astro.params.id);

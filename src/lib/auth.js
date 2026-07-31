@@ -24,7 +24,7 @@ async function pbkdf2(passcode, salt, iterations) {
   return new Uint8Array(bits);
 }
 
-// Format: pbkdf2$<iter>$<saltHex>$<hashHex> — same format the migration produces.
+// Format: pbkdf2$<iter>$<saltHex>$<hashHex>, the same format the migration produces.
 export async function hashPasscode(passcode) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const hash = await pbkdf2(passcode, salt, PBKDF2_ITER);
@@ -59,8 +59,8 @@ export async function signToken(profileId, env, { tokenVersion = 0, ttlDays = 36
 export const TOKEN_COOKIE = 'habitrack_token';
 
 // Verify a raw token string → profileId (number) or null. Checks HMAC + expiry,
-// then confirms the token_version still matches the profile (revocation check —
-// one cheap indexed read). Used by both authedProfile (endpoints) and the
+// then confirms the token_version still matches the profile (a revocation
+// check, one cheap indexed read). Used by both authedProfile (endpoints) and the
 // middleware auth gate. Legacy 3-part tokens (pre-versioning) are treated as
 // version 0, so they stay valid until the next passcode change.
 export async function verifyToken(token, env) {
@@ -77,7 +77,7 @@ export async function verifyToken(token, env) {
   const id = Number(pid);
   if (!Number.isInteger(id)) return null;
   // Revocation: the profile's current token_version must match the token's. Keep
-  // the no-throw contract callers rely on — a DB error fails closed (the app is
+  // the no-throw contract callers rely on. A DB error fails closed (the app is
   // unusable without the DB anyway), never a 500 out of the auth gate.
   let current;
   try { current = await getTokenVersion(getSql(env), id); }

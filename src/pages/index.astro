@@ -8,8 +8,8 @@ import { getSql, listHabits, getProfile } from '../lib/db.js';
 // so that rarer path still fetches; see boot() in HabitApp.)
 // We also SSR the profile identity: iOS copies the session COOKIE into an
 // installed PWA but NOT localStorage, so the client's `profile` can be empty even
-// with a valid cookie — the client hydrates from this instead of bouncing away.
-// Both queries go out in parallel — each Neon call is its own HTTP round trip, so
+// with a valid cookie, so the client hydrates from this instead of bouncing away.
+// Both queries go out in parallel because each Neon call is its own HTTP round trip, so
 // awaiting them in sequence would double this page's time-to-first-byte.
 const env = Astro.locals.runtime?.env;
 const pid = Astro.locals.profileId;

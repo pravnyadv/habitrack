@@ -2,10 +2,10 @@
 // Shared top header used by the main app AND the /profile pages, so both feel
 // like one app. Left: 🦫 logo (links home) + date + account chip (online + name
 // + dropdown menu). Right: page-specific actions (slot) + theme toggle.
-//   showAdd     — render the "＋ new habit" button (main app only; wired by index)
-//   showOverview— render the Overview quick-link (main app only)
-//   showHabits  — render the "← Habits" back-to-app link (profile hub only)
-//   showSignIn  — render a "Sign in" link (public profile view: no session at all,
+//   showAdd:      render the "＋ new habit" button (main app only; wired by index)
+//   showOverview: render the Overview quick-link (main app only)
+//   showHabits:   render the "← Habits" back-to-app link (profile hub only)
+//   showSignIn:   render a "Sign in" link (public profile view: no session at all,
 //                 so the account chip never appears and there's nothing to go back to)
 const { showAdd = false, showOverview = false, showHabits = false, showSignIn = false } = Astro.props;
 const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });

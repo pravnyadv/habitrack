@@ -8,9 +8,9 @@ const json = (data, status = 200) =>
   });
 
 // GET:
-//   shared        — viewers I let see my profile (each { id, name, accepted })
-//   sharedWithMe  — owners whose invite I've accepted (active, view-only)
-//   invites       — owners who invited me but I haven't accepted yet (pending)
+//   shared:       viewers I let see my profile (each { id, name, accepted })
+//   sharedWithMe: owners whose invite I've accepted (active, view-only)
+//   invites:      owners who invited me but I haven't accepted yet (pending)
 export async function GET({ request, locals }) {
   const env = locals.runtime?.env;
   const me = await authedProfile(request, env);
@@ -57,8 +57,8 @@ export async function PATCH({ request, locals }) {
 }
 
 // DELETE a share from either side:
-//   ?viewer=<id> — I (owner) revoke that viewer
-//   ?owner=<id>  — I (viewer) decline/remove that owner's share
+//   ?viewer=<id>: I (owner) revoke that viewer
+//   ?owner=<id>:  I (viewer) decline/remove that owner's share
 export async function DELETE({ request, locals }) {
   const env = locals.runtime?.env;
   const me = await authedProfile(request, env);

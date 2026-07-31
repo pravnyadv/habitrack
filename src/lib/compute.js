@@ -1,6 +1,6 @@
 // Shared client-side computation + rendering helpers, used by both the main
 // dashboard (index) and the /overview route so the logic never diverges.
-// NB: filename intentionally avoids "analytics"/"tracking"/"stats" — those get
+// NB: filename intentionally avoids "analytics"/"tracking"/"stats". Those get
 // blocked by ad/privacy blockers (net::ERR_BLOCKED_BY_CLIENT).
 
 export const COLORS = {
@@ -9,7 +9,7 @@ export const COLORS = {
   pink: '#ec4899', lime: '#84cc16',
 };
 
-// Dark shade of each hue — used for a number that must read clearly against a
+// Dark shade of each hue, used for a number that must read clearly against a
 // pale ~12% tint of the same color (e.g. missed-day numbers).
 export const COLORS_DARK = {
   emerald: '#065f46', sky: '#0c4a6e', blue: '#1e3a8a', violet: '#4c1d95',
@@ -38,12 +38,12 @@ export const schedOf = (h) => new Set((h.schedule || '0,1,2,3,4,5,6').split(',')
 // ---- habit creation rules (shared by the API and the demo sandbox) ---------
 // These three encode what a new habit's schedule/start/backfill must be. The
 // server (api/habits.js) and the demo's local stand-in (lib/demo.js) both derive
-// habits, so the rules live here — duplicating them let the two drift silently.
+// habits, so the rules live here. Duplicating them let the two drift silently.
 export const DAILY = [0, 1, 2, 3, 4, 5, 6];
 const MAX_BACKDATE_DAYS = 366 * 3;
 
 // Weekday numbers a new habit is scheduled on. Junk is dropped, and a streak
-// (quit/abstain) is always daily — "not scheduled today" is meaningless for it.
+// (quit/abstain) is always daily: "not scheduled today" is meaningless for it.
 export function normalizeSchedule(input, kind) {
   if (kind === 'streak') return [...DAILY];
   const clean = Array.isArray(input)
@@ -61,7 +61,7 @@ export function resolveStartDate(raw, today) {
   return s;
 }
 
-// Every scheduled day in [from, to] — the days a backdated normal habit gets
+// Every scheduled day in [from, to]: the days a backdated normal habit gets
 // check-ins for, and the days the demo seed walks.
 export function scheduledDays(from, to, sched) {
   const set = sched instanceof Set ? sched : new Set(sched);
@@ -95,7 +95,7 @@ export function startOf(habit, today = TODAY) {
 
 // Clean-streak stats for a 'streak' habit. days = slip days; every other day in
 // [start, today] is clean. current = clean days up to today; a slip logged for
-// TODAY is graced (skipped, not counted) rather than breaking the streak — the
+// TODAY is graced (skipped, not counted) rather than breaking the streak. The
 // day isn't over, mirroring how normal-habit streaks treat today. longest =
 // longest clean run; total = total clean days; slips = count.
 export function streakStats(habit, today = TODAY) {
@@ -104,7 +104,7 @@ export function streakStats(habit, today = TODAY) {
   let current = 0;
   for (let d = today; d >= start; d = addDays(d, -1)) {
     if (slips.has(d)) {
-      if (d === today) continue; // today's slip isn't final — grace it
+      if (d === today) continue; // today's slip isn't final, so grace it
       break;
     }
     current++;

@@ -6,7 +6,7 @@
 // render the same markup during SSR and paint the list with the HTML.
 //
 // The client then calls the very same functions on every state change, which is what
-// keeps the two identical — a second implementation would drift and flicker.
+// keeps the two identical. A second implementation would drift and flicker.
 //
 // `today` is always an explicit argument, never the module-level TODAY. The server
 // and the browser can disagree about the date (see todayInZone), so it has to be
@@ -19,7 +19,7 @@ import {
   addDays, dow, schedOf, stats, isStreak, startOf, escapeHtml,
 } from './compute.js';
 
-// Mobile: 7 equal columns — the name sits on its own full-width row above the
+// Mobile: 7 equal columns, and the name sits on its own full-width row above the
 // checks. Desktop (sm+): name column + 7 fixed day columns on one row.
 export const GRID = 'grid grid-cols-7 gap-y-1 sm:grid-cols-[minmax(0,1fr)_repeat(7,2.25rem)] sm:gap-y-0 items-center';
 
@@ -40,7 +40,7 @@ export function todayInZone(zone, now = new Date()) {
     // en-CA formats as YYYY-MM-DD.
     return new Intl.DateTimeFormat('en-CA', { timeZone: zone }).format(now);
   } catch {
-    return null; // unknown zone — caller falls back
+    return null; // unknown zone, caller falls back
   }
 }
 
@@ -73,7 +73,7 @@ function weekCellsStreak(habit, { today, readOnly }) {
   return last7(today).map((d) => {
     const todayBg = d === today ? 'rounded-lg bg-slate-50/70 dark:bg-slate-800/40' : '';
     if (d < start) {
-      // before the streak began — not tracked
+      // before the streak began, not tracked
       return `<div class="flex h-9 items-center justify-center opacity-70" title="${d} · before start">${REST}</div>`;
     }
     const slip = slips.has(d);
@@ -99,7 +99,7 @@ export function weekCellsHtml(habit, ctx) {
   return last7(today).map((d) => {
     const isToday = d === today;
     if (!sched.has(dow(d))) {
-      // rest day — not tracked, not clickable
+      // rest day, not tracked, not clickable
       return `<div class="flex h-9 items-center justify-center opacity-70" title="${d} · rest day">${REST}</div>`;
     }
     const done = set.has(d);
