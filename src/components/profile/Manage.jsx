@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { apiFetch } from '../../lib/compute.js';
-import { TK, PID, VIEW, CARD, FIELD, SECONDARY, presence, Msg, Confirm, go } from './ui.jsx';
+import { TK, PID, VIEW, CARD, FIELD, SECONDARY, TRASH, presence, Msg, Confirm, go } from './ui.jsx';
 
 // props: me={id,name,admin,isPublic}, origin (for the public link), profiles=[{id,name}],
 //        shares={shared:[]}, presence=null|{online,profiles}
@@ -16,13 +16,20 @@ export default function Manage({ me, origin = '', profiles = [], shares: initial
   const [isPublic, setIsPublic] = useState(!!me?.isPublic);
   const [pubMsg, setPubMsg] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [adminMsg, setAdminMsg] = useState(null);
+  // Ids the admin deleted this session. One list rather than two, because a deleted
+  // profile has to leave BOTH the "Everyone" roster and the share dropdown, and
+  // those are built from different props.
+  const [deleted, setDeleted] = useState([]);
 
   // `origin` is passed in from the SSR page, so the link renders identically on the
   // server and after hydration (no effect, no second render, no blank first paint).
   const publicUrl = `${origin}/p/${me.id}`;
 
+  const gone = new Set(deleted);
   const sharedIds = new Set(shared.map((v) => v.id));
-  const options = profiles.filter((p) => p.id !== me.id && !sharedIds.has(p.id));
+  const options = profiles.filter((p) => p.id !== me.id && !sharedIds.has(p.id) && !gone.has(p.id));
+  const everyone = (presenceData?.profiles || []).filter((p) => !gone.has(p.id));
 
   async function refreshShared() {
     const { ok, data } = await apiFetch('/api/shares');
@@ -88,6 +95,23 @@ export default function Manage({ me, origin = '', profiles = [], shares: initial
     localStorage.removeItem(TK); localStorage.removeItem(PID); localStorage.removeItem(VIEW);
     go('/profile');
   }
+  // Admin deleting SOMEONE ELSE. The API has always allowed this (DELETE
+  // /api/profiles/<id> passes for self or admin) but nothing in the UI reached it,
+  // so the documented admin power was unusable. Deleting own profile stays on the
+  // button at the bottom, which also has to clear localStorage and navigate away.
+  async function delOther(p) {
+    const { ok, data } = await apiFetch('/api/profiles/' + p.id, { method: 'DELETE' });
+    if (!ok) { setAdminMsg({ text: (data && data.error) || `Could not delete ${p.name}.`, ok: false }); return; }
+    setDeleted((ids) => [...ids, p.id]);
+    setAdminMsg({ text: `Deleted ${p.name}.`, ok: true });
+    // Their shares are gone by cascade, and previewing a profile that no longer
+    // exists would leave a read-only banner naming a dead profile.
+    try {
+      const v = JSON.parse(localStorage.getItem(VIEW) || 'null');
+      if (v && v.id === p.id) localStorage.removeItem(VIEW);
+    } catch { /* unparseable, nothing to clear */ }
+    refreshShared();
+  }
 
   return (
     <div class="flex flex-col gap-4">
@@ -109,7 +133,7 @@ export default function Manage({ me, origin = '', profiles = [], shares: initial
       </div>
 
       <div class={CARD}>
-        {/* The whole row is the switch — a 24x44 track is a small target, and only
+        {/* The whole row is the switch: a 24x44 track is a small target, and only
             spans go inside (a <p> in a <button> is invalid HTML and browsers
             restructure it, which breaks Preact hydration). */}
         <button type="button" role="switch" aria-checked={isPublic} onClick={togglePublic}
@@ -169,13 +193,25 @@ export default function Manage({ me, origin = '', profiles = [], shares: initial
             <span class="flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>{presenceData.online} online</span>
           </div>
           <div class="flex flex-col gap-1.5">
-            {presenceData.profiles.map((p) => (
+            {everyone.map((p) => (
               <div key={p.id} class="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/50">
                 <span class="min-w-0 flex-1 truncate">{p.name}{p.id === me.id ? ' (you)' : ''}</span>
                 {presence(p.last_active_at)}
+                {/* No delete on your own row: the button at the bottom of this page
+                    is the one that also signs you out afterwards. */}
+                {p.id !== me.id && (
+                  <button type="button" aria-label={`Delete ${p.name}`} title={`Delete ${p.name}`}
+                    onClick={() => setConfirm({
+                      text: `Delete “${p.name}” and every habit and check-in it has? This cannot be undone.`,
+                      okLabel: 'Delete',
+                      onYes: () => delOther(p),
+                    })}
+                    class="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/40 dark:hover:text-rose-400">{TRASH}</button>
+                )}
               </div>
             ))}
           </div>
+          <Msg m={adminMsg} />
         </div>
       )}
 
