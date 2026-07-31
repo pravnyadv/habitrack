@@ -226,6 +226,12 @@ Fixtures are built relative to `compute.js`'s own `TODAY`, so the suite is deter
 
 The suite was mutation-checked: reverting the CSV fix, the weekday filter, the backdate cap, the streak-forces-daily rule, the today's-slip grace, or the seed's defensive copy each fails at least one test.
 
+## Agent guardrails
+
+`.claude/settings.json` denies **reads** of `.env`, `.env.*` and `.dev.vars`. Those files hold the live Neon connection string, `AUTH_SECRET` and the Pusher secret, and nothing an agent legitimately does here needs their contents — the app reads them through `locals.runtime.env` at runtime, and `db:init` through `process.env`. The rule blocks the Read tool. It is **not** a sandbox: `cat .env` from Bash still works, because `sandbox.enabled` is off. Turning the sandbox on would make the same rule filesystem-enforced (`sandbox.filesystem.denyRead` merges paths from `Read(...)` deny rules), at the cost of running every Bash command sandboxed.
+
+A deny rule cannot be overridden by asking, so if you ever genuinely need to change a value in those files, do it yourself or drop the rule first.
+
 ## Conventions / gotchas
 
 - New API route → `const profileId = await authedProfile(request, locals.runtime?.env); if (!profileId) return unauthorized();` then scope all queries by `profileId`.
