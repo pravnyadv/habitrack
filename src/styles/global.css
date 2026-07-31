@@ -48,3 +48,14 @@ button { -webkit-tap-highlight-color: transparent; }
     font-size: 16px;
   }
 }
+
+/* The server renders the habit list for the default tab and its own data. When the
+   client knows better (a non-default tab, a share preview, a demo sandbox), the
+   inline script in <head> sets data-ssr-stale before <body> is parsed, so that
+   markup is never painted; the module script clears the flag after its first
+   render. See HabitApp.astro. */
+[data-ssr-stale] #week-header,
+[data-ssr-stale] #habit-list,
+[data-ssr-stale] #today-card {
+  display: none;
+}

@@ -2,6 +2,8 @@
 import '../styles/global.css';
 import AppHeader from './AppHeader.astro';
 import SplashLinks from './SplashLinks.astro';
+import { iso, isStreak } from '../lib/compute.js';
+import { weekHeaderHtml, habitListHtml, todayCardData, tabButtonClass, todayInZone } from '../lib/render.js';
 
 // The whole habit app (list, calendars, Today card, add/edit form), rendered by
 // two routes that fetch their own data:
@@ -22,9 +24,34 @@ import SplashLinks from './SplashLinks.astro';
 const { mode = 'app', initialHabits = [], initialProfile = null, viewing = null } = Astro.props;
 const publicView = mode === 'public';
 
+// `listHabits` returns created_at as a Date. Normalise once here: the render helpers
+// below call .slice() on it, and the client expects a string too.
+const habits = initialHabits.map((h) => ({
+  ...h,
+  created_at: h.created_at instanceof Date ? h.created_at.toISOString() : h.created_at,
+}));
+
 // The whole client-side starting state travels in ONE script tag, decoded once.
-const state = { mode, habits: initialHabits, profile: initialProfile, viewing };
+const state = { mode, habits, profile: initialProfile, viewing };
 const embed = (v) => JSON.stringify(v ?? null).replace(/</g, '\\u003c');
+
+// ---- server-rendered list -------------------------------------------------
+// The list used to appear only after a 37KB module had downloaded and run. These
+// are the same functions the client calls, so the markup is identical and the
+// client's first render is a no-op repaint rather than a visible change.
+//
+// The date comes from the visitor's timezone (Cloudflare geo-IP) because the Worker
+// runs in UTC, and a week strip rendered a day off would visibly jump when the
+// client re-rendered in local time.
+const today = todayInZone(Astro.locals.runtime?.cf?.timezone) || iso(new Date());
+const ssrCtx = { today, readOnly: publicView };
+// First paint is always the default 'normal' tab. A visitor whose stored tab is
+// 'streak' (or who is mid share-preview) has this hidden by the inline script in
+// <head>, so they never see the wrong list.
+const ssrShown = habits.filter((h) => !isStreak(h));
+const ssrWeek = weekHeaderHtml(today);
+const ssrList = habitListHtml(ssrShown, ssrCtx);
+const ssrToday = todayCardData(habits, today);
 ---
 
 <!-- data-mode is how AppHeader's own script knows which surface it's on; without it
@@ -57,6 +84,18 @@ const embed = (v) => JSON.stringify(v ?? null).replace(/</g, '\\u003c');
       if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches)) {
         document.documentElement.classList.add('dark');
       }
+      // The server renders the list for the default tab and its own data. Where the
+      // client knows better, hide that markup (CSS, see global.css) so it never
+      // flashes the wrong content — the module script fills it in on boot and clears
+      // the flag. Runs before <body> is parsed, so nothing wrong is ever painted.
+      try {
+        const mode = document.documentElement.dataset.mode;
+        if ((localStorage.getItem('habitrack_tab') || 'normal') !== 'normal'
+          || (mode === 'app' && localStorage.getItem('habitrack_viewing'))
+          || (mode === 'demo' && localStorage.getItem('habitrack_demo'))) {
+          document.documentElement.dataset.ssrStale = '1';
+        }
+      } catch { /* private mode: just show the server's version */ }
     </script>
   </head>
   <body class="h-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 font-sans antialiased">
@@ -125,20 +164,20 @@ const embed = (v) => JSON.stringify(v ?? null).replace(/</g, '\\u003c');
       <!-- Kind switcher: normal habits vs streak (quit/abstain) trackers. The
            active tab also decides what the + button creates. -->
       <div id="kind-tabs" class="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm font-semibold dark:bg-slate-800/60">
-        <button type="button" data-tab="normal" class="rounded-lg py-2 transition">Habits</button>
-        <button type="button" data-tab="streak" class="rounded-lg py-2 transition">Streaks</button>
+        <button type="button" data-tab="normal" class={tabButtonClass(true)}>Habits</button>
+        <button type="button" data-tab="streak" class={tabButtonClass(false)}>Streaks</button>
       </div>
 
       <!-- Today progress: one ring per track — habits (done/due today) and quits
            (clean vs slipped today). Shows on both tabs; each ring appears only if
            that track has anything to show today. Rings are filled by JS. -->
-      <section id="today-card" class="mb-4 hidden rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:mb-6 sm:p-5">
+      <section id="today-card" class:list={['mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:mb-6 sm:p-5', ssrToday.show ? '' : 'hidden']}>
         <div class="flex items-center justify-between gap-4">
           <div class="min-w-0">
             <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Today's progress</p>
-            <p id="today-status" class="mt-1 text-sm font-semibold">&nbsp;</p>
+            <p id="today-status" class={'mt-1 text-sm font-semibold ' + ssrToday.cls}>{ssrToday.text || '\u00a0'}</p>
           </div>
-          <div id="today-rings" class="flex shrink-0 items-start gap-3 sm:gap-4"></div>
+          <div id="today-rings" class="flex shrink-0 items-start gap-3 sm:gap-4" set:html={ssrToday.rings}></div>
         </div>
       </section>
 
@@ -197,12 +236,12 @@ const embed = (v) => JSON.stringify(v ?? null).replace(/</g, '\\u003c');
       </form>
 
       <!-- Weekday header -->
-      <div id="week-header" class="mb-2 px-4"></div>
+      <div id="week-header" class:list={['mb-2 px-4', ssrShown.length ? '' : 'hidden']} set:html={ssrWeek}></div>
 
       <!-- Habit list -->
-      <main id="habit-list" class="space-y-2"></main>
+      <main id="habit-list" class="space-y-2" set:html={ssrList}></main>
 
-      <div id="empty-state" class="hidden py-10 text-center">
+      <div id="empty-state" class:list={['py-10 text-center', ssrShown.length ? 'hidden' : '']}>
         <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-3xl dark:bg-emerald-950/40">🌱</div>
         <p id="empty-title" class="text-base font-semibold">Start your first habit</p>
         <p id="empty-sub" class="mx-auto mt-1 max-w-xs text-sm text-slate-400 dark:text-slate-500">Track something you want to do regularly — check it off with one tap a day.</p>
@@ -221,11 +260,13 @@ const embed = (v) => JSON.stringify(v ?? null).replace(/</g, '\\u003c');
     <script id="initial-state" type="application/json" is:inline set:html={embed(state)}></script>
 
     <script>
-      import { COLORS, COLORS_DARK, MONTHS, WD, TODAY, BACKFILL_DAYS, iso, pad2, addDays, dow, schedOf, stats, windowStart, heatmapBlock, githubGraph, streakGraph, isStreak, startOf, activeFromOf, SLIP_COLOR, escapeHtml, connectRealtime, apiFetch } from '../lib/compute.js';
+      import { COLORS, COLORS_DARK, WD, TODAY, iso, pad2, addDays, schedOf, stats, githubGraph, streakGraph, isStreak, startOf, activeFromOf, SLIP_COLOR, connectRealtime, apiFetch } from '../lib/compute.js';
       import { demoApi, loadDemo, saveDemo, clearDemo, trackDemoVisit } from '../lib/demo.js';
+      import { GRID, backfillStart, weekHeaderHtml, weekCellsHtml, nameBtnHtml, cardShellHtml, collapsedCardHtml, habitListHtml, todayCardData, tabButtonClass } from '../lib/render.js';
 
-      // Earliest day a check-in can still be marked (today − (BACKFILL_DAYS−1)).
-      const BACKFILL_START = addDays(TODAY, -(BACKFILL_DAYS - 1));
+      // Earliest day a check-in can still be marked; the month calendar uses it to
+      // decide which cells are tappable.
+      const BACKFILL_START = backfillStart(TODAY);
 
       // The entire server-rendered starting state, decoded once. `mode` is the
       // surface ('app' | 'public' | 'demo'); see the frontmatter. The habits render
@@ -321,83 +362,9 @@ const embed = (v) => JSON.stringify(v ?? null).replace(/</g, '\\u003c');
       const list = document.getElementById('habit-list');
       const weekHead = document.getElementById('week-header');
 
-      // Mobile: 7 equal columns — the name sits on its own full-width row above
-      // the checks. Desktop (sm+): name column + 7 fixed day columns on one row.
-      const GRID = 'grid grid-cols-7 gap-y-1 sm:grid-cols-[minmax(0,1fr)_repeat(7,2.25rem)] sm:gap-y-0 items-center';
-      const last7 = () => Array.from({ length: 7 }, (_, i) => addDays(TODAY, i - 6));
-
-      const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="h-[18px] w-[18px]"><path d="M4.5 12.75l6 6 9-13.5"/></svg>';
-      const CROSS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M6 18L18 6M6 6l12 12"/></svg>';
-      const FLAME = '<svg viewBox="0 0 24 24" fill="currentColor" class="h-3 w-3"><path d="M12.963 2.286a.75.75 0 0 0-1.071-.136 9.742 9.742 0 0 0-3.539 6.177A7.547 7.547 0 0 1 6.648 6.61a.75.75 0 0 0-1.152-.081A9 9 0 1 0 15.68 4.534a7.46 7.46 0 0 1-2.717-2.248Z"/><path d="M15.75 14.25a3.75 3.75 0 1 1-7.313-1.172c.628.465 1.35.81 2.133 1.005a5.99 5.99 0 0 1 1.925-3.547 3.75 3.75 0 0 1 3.255 3.714Z"/></svg>';
-
-      function weekHeader() {
-        const cols = last7().map((d) => {
-          const dd = new Date(d + 'T00:00:00');
-          const isToday = d === TODAY;
-          return `<div class="flex flex-col items-center leading-tight ${isToday ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'}">
-              <span class="text-[11px] font-medium">${dd.toLocaleDateString('en-US', { weekday: 'short' })}</span>
-              <span class="text-[11px] ${isToday ? 'font-semibold' : ''}">${dd.getDate()}</span>
-            </div>`;
-        }).join('');
-        // leading empty cell only exists on desktop (name column)
-        weekHead.innerHTML = `<div class="${GRID}"><span class="hidden sm:block"></span>${cols}</div>`;
-      }
-
-      const REST = '<span class="h-1 w-1 rounded-full bg-slate-200 dark:bg-slate-700"></span>';
-      // Streak 7-day strip: every day is clean (✓, color) by default from the
-      // start date; slips (habit.days) show a red ✕. Tapping toggles a slip — so
-      // you can mark "I slipped yesterday" if you forgot to open the app today.
-      function weekCellsStreak(habit) {
-        const slips = new Set(habit.days);
-        const color = COLORS[habit.color] || COLORS.emerald;
-        const start = startOf(habit);
-        return last7().map((d) => {
-          const isToday = d === TODAY;
-          const todayBg = isToday ? 'rounded-lg bg-slate-50/70 dark:bg-slate-800/40' : '';
-          if (d < start) {
-            // before the streak began — not tracked
-            return `<div class="flex h-9 items-center justify-center opacity-70" title="${d} · before start">${REST}</div>`;
-          }
-          const slip = slips.has(d);
-          const editable = !viewing && d >= BACKFILL_START;
-          const marker = slip
-            ? `<span class="text-rose-500 dark:text-rose-400">${CROSS}</span>`
-            : `<span style="color:${color}">${CHECK}</span>`;
-          const title = `${d}${slip ? ' · slipped' : ' · clean'}`;
-          if (!editable) return `<div class="flex h-9 items-center justify-center ${todayBg}" title="${title}">${marker}</div>`;
-          return `<button data-day="${d}" data-habit="${habit.id}"
-              class="day flex h-9 touch-manipulation items-center justify-center rounded-lg transition hover:bg-slate-50 active:scale-90 dark:hover:bg-slate-800/60 ${todayBg}"
-              title="${title}">${marker}</button>`;
-        }).join('');
-      }
-      function weekCells(habit) {
-        if (isStreak(habit)) return weekCellsStreak(habit);
-        const set = new Set(habit.days);
-        const sched = schedOf(habit);
-        const color = COLORS[habit.color] || COLORS.emerald;
-        return last7().map((d) => {
-          const isToday = d === TODAY;
-          if (!sched.has(dow(d))) {
-            // rest day — not tracked, not clickable
-            return `<div class="flex h-9 items-center justify-center opacity-70" title="${d} · rest day">${REST}</div>`;
-          }
-          const done = set.has(d);
-          const editable = !viewing && d >= BACKFILL_START;   // today + the backfill window
-          const todayBg = isToday ? 'rounded-lg bg-slate-50/70 dark:bg-slate-800/40' : '';
-          // marker: done ✓ (color) · markable ◯ (hollow ring) · missed & locked ✕ (faint)
-          const marker = done
-            ? `<span style="color:${color}">${CHECK}</span>`
-            : editable
-              ? `<span class="h-[18px] w-[18px] rounded-full border-2 ${isToday ? '' : 'border-slate-300 dark:border-slate-600'}"${isToday ? ` style="border-color:${color}"` : ''}></span>`
-              : `<span class="text-slate-300 dark:text-slate-600">${CROSS}</span>`;
-          if (!editable) {
-            return `<div class="flex h-9 items-center justify-center ${todayBg}" title="${d}${done ? ' · done' : ''}">${marker}</div>`;
-          }
-          return `<button data-day="${d}" data-habit="${habit.id}"
-              class="day flex h-9 touch-manipulation items-center justify-center rounded-lg transition hover:bg-slate-50 active:scale-90 dark:hover:bg-slate-800/60 ${todayBg}"
-              title="${d}${done ? ' · done' : ''}">${marker}</button>`;
-        }).join('');
-      }
+      // The week strip, the name row and the collapsed card all come from
+      // src/lib/render.js so the server and the client emit identical markup.
+      const rctx = () => ({ today: TODAY, readOnly: !!viewing });
 
       // ---- LEVEL 1: single-month calendar (current month by default) ---------
       const calView = new Map(); // habitId -> {y, m} of the month being viewed
@@ -598,25 +565,11 @@ const embed = (v) => JSON.stringify(v ?? null).replace(/</g, '\\u003c');
       }
 
       // ---- habit card: week strip (collapsed) / calendar (expanded), both kinds --
+      // Collapsed is the shared, server-renderable form. Expanded needs client-only
+      // state (which month you paged to), so it stays here.
       function habitCard(h) {
-        const s = stats(h);
-        const isOpen = expanded.has(h.id);
-        const color = COLORS[h.color] || COLORS.emerald;
-        // Expanded detail view drops the week strip (the month calendar below
-        // covers those days); the strip stays only on the collapsed cards.
-        const nameBtn = `
-          <button data-toggle="${h.id}" class="flex w-full min-w-0 items-center gap-2 py-1.5 pr-2 text-left">
-            <span class="shrink-0 text-base">${escapeHtml(h.emoji)}</span>
-            <span class="truncate font-medium">${escapeHtml(h.name)}</span>
-            ${s.current > 0 ? `<span class="inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums" style="color:${color};background:${color}14" title="${s.current}-day ${isStreak(h) ? 'clean streak' : 'streak'}">${FLAME}${s.current}</span>` : ''}
-            <svg class="ml-auto h-4 w-4 shrink-0 text-slate-300 transition ${isOpen ? 'rotate-180' : ''} dark:text-slate-600" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
-          </button>`;
-        return `
-        <article class="rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-black/5 transition dark:bg-slate-900 dark:ring-white/10">
-          ${isOpen
-            ? nameBtn + overviewPanel(h)
-            : `<div class="${GRID}"><div class="col-span-7 cursor-pointer sm:col-span-1" data-toggle="${h.id}">${nameBtn}</div>${weekCells(h)}</div>`}
-        </article>`;
+        if (!expanded.has(h.id)) return collapsedCardHtml(h, rctx());
+        return cardShellHtml(nameBtnHtml(h, { today: TODAY, isOpen: true }) + overviewPanel(h));
       }
 
       const kindTabs = document.getElementById('kind-tabs');
@@ -624,10 +577,7 @@ const embed = (v) => JSON.stringify(v ?? null).replace(/</g, '\\u003c');
       const addBottomLabel = document.getElementById('add-btn-bottom-label');
       function renderTabs() {
         [...kindTabs.children].forEach((b) => {
-          const on = b.dataset.tab === activeTab;
-          b.className = `rounded-lg py-2 transition ${on
-            ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
-            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`;
+          b.className = tabButtonClass(b.dataset.tab === activeTab);
         });
       }
 
@@ -657,65 +607,24 @@ const embed = (v) => JSON.stringify(v ?? null).replace(/</g, '\\u003c');
                 : 'Track something you want to do regularly — check it off with one tap a day.');
         }
 
-        weekHeader();
+        weekHead.innerHTML = weekHeaderHtml(TODAY);
         list.innerHTML = shown.map(habitCard).join('');
         renderTodayCard();
+        // The SSR'd markup (if it was hidden as possibly-stale) has now been replaced
+        // by the client's own, so reveal it.
+        delete document.documentElement.dataset.ssrStale;
       }
 
-      // Small progress ring: ordered color segments drawn from 12 o'clock over a
-      // faint track. `gap` (path units) inserts a rounded break between segments
-      // (the quit ring uses it to separate clean from slip). Geometry matches the
-      // rest of the app (r=15.5, stroke 4).
-      const RING_GREEN = COLORS.emerald, RING_SLIP = SLIP_COLOR;
-      function ringSvg(segments, gap = 0) {
-        const C = 2 * Math.PI * 15.5;
-        let start = 0, arcs = '';
-        for (const s of segments) {
-          const len = Math.max(0, s.frac * C - gap);
-          if (len > 0.01) {
-            arcs += `<circle cx="18" cy="18" r="15.5" fill="none" stroke="${s.color}" stroke-width="4"${gap ? ' stroke-linecap="round"' : ''} stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-(start + gap / 2)}" style="transition:stroke-dashoffset .5s ease"/>`;
-          }
-          start += s.frac * C;
-        }
-        return `<svg class="h-12 w-12 -rotate-90 sm:h-14 sm:w-14" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" class="stroke-slate-100 dark:stroke-slate-800" stroke-width="4"/>${arcs}</svg>`;
-      }
-      function ringBlock(svg, center, title, sub) {
-        return `<div>
-            <div class="relative mx-auto h-12 w-12 sm:h-14 sm:w-14">${svg}<span class="absolute inset-0 flex items-center justify-center text-xs font-semibold tabular-nums sm:text-sm">${center}</span></div>
-            <div class="mt-1 text-center text-[11px] font-semibold leading-tight text-slate-500 dark:text-slate-400">${title}<span class="mt-px hidden text-[10px] font-medium text-slate-400 dark:text-slate-500 sm:block">${sub}</span></div>
-          </div>`;
-      }
-
-      // Two-track daily summary: habits done/due today + quits clean/slipped today.
-      // Each ring shows only if its track has something today; card hides if neither.
+      // Two-track daily summary. todayCardData (shared with SSR) computes it; this
+      // only applies the result to the DOM.
       function renderTodayCard() {
-        const card = document.getElementById('today-card');
-        const todayDow = dow(TODAY);
-        const quits = habits.filter(isStreak);
-        const due = habits.filter((h) => !isStreak(h) && schedOf(h).has(todayDow));
-        const done = due.filter((h) => h.days.includes(TODAY)).length;
-        const slip = quits.filter((h) => h.days.includes(TODAY)).length;
-        const clean = quits.length - slip;
-
-        const showHabits = due.length > 0, showQuits = quits.length > 0;
-        card.classList.toggle('hidden', !showHabits && !showQuits);
-        if (!showHabits && !showQuits) return;
-
-        let rings = '';
-        if (showHabits) rings += ringBlock(ringSvg([{ frac: done / due.length, color: RING_GREEN }]), `${done}/${due.length}`, 'Habits', 'done today');
-        if (showQuits) rings += ringBlock(ringSvg([
-          { frac: clean / quits.length, color: RING_GREEN },
-          { frac: slip / quits.length, color: RING_SLIP },
-        ], 1.5), `${clean}/${quits.length}`, 'Quit', 'clean today');
-        document.getElementById('today-rings').innerHTML = rings;
-
-        let text, cls;
-        if (slip > 0) { text = `${slip} slip${slip > 1 ? 's' : ''} today`; cls = 'text-red-500 dark:text-red-400'; }
-        else if (showHabits && done < due.length) { const left = due.length - done; text = `${left} habit${left > 1 ? 's' : ''} to go`; cls = 'text-slate-500 dark:text-slate-400'; }
-        else { text = showQuits ? 'All clean · keep going' : 'All done today'; cls = 'text-emerald-600 dark:text-emerald-400'; }
+        const t = todayCardData(habits, TODAY);
+        document.getElementById('today-card').classList.toggle('hidden', !t.show);
+        if (!t.show) return;
+        document.getElementById('today-rings').innerHTML = t.rings;
         const statusEl = document.getElementById('today-status');
-        statusEl.textContent = text;
-        statusEl.className = 'mt-1 text-sm font-semibold ' + cls;
+        statusEl.textContent = t.text;
+        statusEl.className = 'mt-1 text-sm font-semibold ' + t.cls;
       }
 
       // ---- interactions ------------------------------------------------------
