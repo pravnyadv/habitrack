@@ -9,7 +9,8 @@
     "preview": "wrangler pages dev dist",
     "db:init": "node scripts/init-db.mjs",
     "deploy": "astro build && CLOUDFLARE_ACCOUNT_ID=0890b69d5033a6d451ec1b984d7476d0 wrangler pages deploy dist --project-name habitrack --branch main",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "splash": "node scripts/gen-splash.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^12.6.13",
