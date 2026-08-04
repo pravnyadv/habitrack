@@ -252,16 +252,30 @@ export function escapeHtml(s) {
 }
 
 // ---- data export (long format: one row per habit per day) ----------------
-// Status mirrors the calendar exactly: done > before_created > not_scheduled
-// > missed. `today` is injectable for testing.
+// Status mirrors the calendar exactly: for a normal habit done > before_created
+// > not_scheduled > missed, and for a quit slipped > before_created > clean. The
+// two kinds are inverses (a checkins row is done for one, a slip for the other),
+// so the same `days` array must never export the same word; `habit_kind` is in
+// the output so a reader can tell which vocabulary applies. `today` is
+// injectable for testing.
 export function buildExportRecords(habits, today = TODAY) {
-  const meta = habits.map((h) => ({
-    h,
-    days: new Set(h.days),
-    sched: schedOf(h),
-    created: (h.created_at || '').slice(0, 10) || null,
-    activeFrom: activeFromOf(h),
-  }));
+  const meta = habits.map((h) => {
+    // Each kind starts where its own stats function starts, or the file would
+    // disagree with the app. A quit runs from start_date (it backfills no
+    // check-ins, so that field is the only record tracking began earlier); a
+    // habit from the earlier of its created day and first check-in. Either way
+    // a check-in outside that range still gets a row instead of vanishing.
+    const from = isStreak(h) ? startOf(h, today) : activeFromOf(h);
+    const first = h.days.length ? h.days.reduce((a, b) => (a < b ? a : b)) : null;
+    return {
+      h,
+      streak: isStreak(h),
+      days: new Set(h.days),
+      sched: schedOf(h),
+      created: (h.created_at || '').slice(0, 10) || null,
+      activeFrom: (first && (!from || first < from)) ? first : from,
+    };
+  });
 
   let start = today;
   for (const m of meta) if (m.activeFrom && m.activeFrom < start) start = m.activeFrom;
@@ -270,16 +284,19 @@ export function buildExportRecords(habits, today = TODAY) {
   for (const m of meta) {
     for (let d = start; d <= today; d = addDays(d, 1)) {
       const wd = new Date(d + 'T00:00:00').getDay();
-      const scheduled = m.sched.has(wd);
+      // A quit has no rest days: abstaining applies every day, which is why
+      // /api/habits forces its schedule to all seven.
+      const scheduled = m.streak || m.sched.has(wd);
       let status;
-      if (m.days.has(d)) status = 'done';
+      if (m.days.has(d)) status = m.streak ? 'slipped' : 'done';
       else if (m.activeFrom && d < m.activeFrom) status = 'before_created';
       else if (!scheduled) status = 'not_scheduled';
-      else status = 'missed';
+      else status = m.streak ? 'clean' : 'missed';
       records.push({
         date: d,
         day_of_week: WD_SUN[wd],
         habit_name: m.h.name,
+        habit_kind: m.streak ? 'streak' : 'normal',
         habit_created_date: m.created || '',
         scheduled,
         status,
@@ -289,7 +306,7 @@ export function buildExportRecords(habits, today = TODAY) {
   return records;
 }
 
-const EXPORT_COLS = ['date', 'day_of_week', 'habit_name', 'habit_created_date', 'scheduled', 'status'];
+const EXPORT_COLS = ['date', 'day_of_week', 'habit_name', 'habit_kind', 'habit_created_date', 'scheduled', 'status'];
 
 export function toCSV(records) {
   const esc = (v) => {

@@ -9,6 +9,7 @@ import {
   TODAY, DAILY, iso, pad2, addDays, dow, schedOf,
   normalizeSchedule, resolveStartDate, scheduledDays,
   activeFromOf, isStreak, startOf, stats, streakStats,
+  buildExportRecords, toCSV,
   escapeHtml, timeAgo,
 } from '../src/lib/compute.js';
 
@@ -259,6 +260,71 @@ describe('startOf / activeFromOf', () => {
       '2026-05-20',
     );
     assert.equal(activeFromOf({ created_at: '2026-06-01T00:00:00Z', days: [] }), '2026-06-01');
+  });
+});
+
+describe('buildExportRecords', () => {
+  // The export is the one place the inversion escapes the app, so it gets the
+  // same treatment as stats(): the same `days` array must read opposite ways.
+  const days = back(3);
+  const row = (recs, name, d) => recs.find((r) => r.habit_name === name && r.date === d);
+
+  test('a checkin exports as done for a habit and slipped for a quit', () => {
+    const recs = buildExportRecords([
+      habit({ id: 1, name: 'run', days }),
+      habit({ id: 2, name: 'sugar', kind: 'streak', start_date: addDays(TODAY, -10), days }),
+    ]);
+    assert.equal(row(recs, 'run', days[0]).status, 'done');
+    assert.equal(row(recs, 'sugar', days[0]).status, 'slipped');
+  });
+
+  test('a quit day with no checkin is clean, not missed', () => {
+    const recs = buildExportRecords([
+      habit({ name: 'sugar', kind: 'streak', start_date: addDays(TODAY, -10), days }),
+    ]);
+    const statuses = new Set(recs.map((r) => r.status));
+    assert.deepEqual([...statuses].sort(), ['clean', 'slipped']);
+    assert.equal(recs.filter((r) => r.status === 'clean').length, 10, '11 days tracked, 1 slipped');
+  });
+
+  test("a quit's backdated start_date is exported, not truncated to the created day", () => {
+    // A streak backfills no check-ins, so start_date is the only record that
+    // tracking began earlier. Deriving the range from created_at alone dropped
+    // every clean day before it.
+    const recs = buildExportRecords([
+      habit({
+        name: 'sugar', kind: 'streak', days: [],
+        start_date: addDays(TODAY, -10), created_at: addDays(TODAY, -5) + 'T00:00:00.000Z',
+      }),
+    ]);
+    assert.equal(recs[0].date, addDays(TODAY, -10));
+    assert.equal(recs.length, 11);
+  });
+
+  test('a quit has no rest days even if its schedule says otherwise', () => {
+    const recs = buildExportRecords([
+      habit({ name: 'sugar', kind: 'streak', schedule: '1', start_date: addDays(TODAY, -6), days: [] }),
+    ]);
+    assert.equal(recs.every((r) => r.scheduled === true), true);
+    assert.equal(recs.every((r) => r.status === 'clean'), true);
+  });
+
+  test('a rest day for a normal habit is not_scheduled, not missed', () => {
+    const mondayOnly = buildExportRecords([habit({ name: 'gym', schedule: '1', days })]);
+    for (const r of mondayOnly) {
+      assert.equal(r.status, r.day_of_week === 'Mon' || r.date === days[0] ? r.status : 'not_scheduled');
+    }
+  });
+
+  test('the CSV carries habit_kind so a reader can tell the vocabularies apart', () => {
+    const csv = toCSV(buildExportRecords([
+      habit({ name: 'run', days }),
+      habit({ name: 'sugar', kind: 'streak', start_date: addDays(TODAY, -10), days }),
+    ]));
+    const [header, ...lines] = csv.split('\n');
+    assert.match(header, /^date,day_of_week,habit_name,habit_kind,habit_created_date,scheduled,status$/);
+    assert.ok(lines.some((l) => l.includes(',run,normal,')));
+    assert.ok(lines.some((l) => l.includes(',sugar,streak,')));
   });
 });
 
