@@ -247,6 +247,26 @@ export function streakGraph(habit) {
   return `<div>${heatmapBlock({ earliest, dayInfo, legend, countText: `${clean} clean day${clean === 1 ? '' : 's'} in the last year` })}</div>`;
 }
 
+// 12-month totals across every quit, for the Overview's Quits cards. Clean days
+// and slips are windowed so they agree with the heatmap directly under them,
+// which counts the same way. `longest` is deliberately all-time: capping a
+// multi-year clean run at 365 would understate the one number a quit tracker
+// exists to show, and the habits row's "Longest streak" is all-time too.
+export function quitAggregate(quits, today = TODAY) {
+  const earliest = windowStart();
+  let clean = 0, slips = 0, longest = 0;
+  for (const h of quits) {
+    const slipDays = new Set(h.days);
+    const start = startOf(h, today);
+    for (let d = start > earliest ? start : earliest; d <= today; d = addDays(d, 1)) {
+      if (slipDays.has(d)) slips++; else clean++;
+    }
+    const best = streakStats(h, today).longest;
+    if (best > longest) longest = best;
+  }
+  return { clean, slips, longest };
+}
+
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

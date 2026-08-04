@@ -56,8 +56,10 @@ src/
                          # realtime, two-track Today card, emoji picker, add buttons. Rendered by
                          # index.astro, p/[id].astro AND profile/demo.astro; one `mode` prop
                          # ('app'|'public'|'demo') picks the surface, also stamped on <html data-mode>
-    Overview.jsx         # Preact: aggregate stats + heatmap (normal habits only, `norm`) + CSV/JSON
-                         # export (ALL habits, quits included) (SSR habits via props).
+    Overview.jsx         # Preact: TWO sections, one per kind, each with its own cards, chip row and
+                         # filter state (habits: avg/perfect/longest + aggregate heatmap; quits:
+                         # clean/longest/slips + per-quit streakGraph) + CSV/JSON export (ALL
+                         # habits, quits included) (SSR habits via props).
                          # `mode="demo"` reads the localStorage sandbox instead of the API and
                          # skips realtime, which is how /profile/demo/overview reuses this island.
     profile/
@@ -199,6 +201,7 @@ Consequences worth remembering:
 - **`startOf(habit)`** is `start_date` when set, else the created date. Days before it are never counted for either kind.
 - **Creating a `normal` habit with a backdated `startDate` backfills check-ins** for every scheduled day from that date to today (`habits.js:69`), so an existing streak carries over. Creating a `streak` habit backfills nothing, since no rows means clean.
 - `compute.js` exports `isStreak()`, `startOf()`, `streakStats()` and `streakGraph()`. `stats()` dispatches on kind, so call it rather than branching at the call site.
+- **The Overview is two sections, one per kind**, because no card can average the kinds together: a clean day is not a completion, so a quit in "Avg completion" would put slip days into a completion rate and invert it. Habits keep avg/perfect/longest and the aggregate heatmap; quits get **Clean days / Longest / Slips** (`quitAggregate()`) and a per-quit `streakGraph()`. Each section owns its own chip row and filter state, and each renders only when that kind has rows, so the "No habits yet" empty state now appears only when there is nothing at all (before this, a quits-only profile saw it and nothing else). There is no "All quits" aggregate, so one quit is always selected: `qFilter` starts null and render falls back to `quits[0]`, which also covers the selected quit being deleted. In `quitAggregate`, clean days and slips are windowed to 12 months so they agree with the heatmap under them, while `longest` is deliberately all-time, since capping a multi-year clean run at 365 would understate the one number a quit tracker exists to show (the habits row's "Longest streak" is all-time for the same reason).
 - **The export has one vocabulary per kind**, since `done`/`missed` would state the opposite of the truth for a quit. `buildExportRecords` emits `done` / `missed` / `not_scheduled` for `normal` and `slipped` / `clean` for `streak`, plus `before_created` for both, and carries a `habit_kind` column so a reader knows which set applies. Its row range also follows each kind's own stats function: `startOf()` for a quit (nothing backfills its check-ins, so `start_date` is the only record that tracking began earlier) and `activeFromOf()` for a habit, floored by the earliest check-in either way so no existing row is dropped from the file.
 
 The app UI splits the two with a **kind switcher** (`#kind-tabs`) above the list. The active tab also decides what the `+` button creates. There are **two** add buttons: the small `#add-btn` in the header and the permanent dashed `#add-btn-bottom` under the list (people were missing the header one). The bottom one is always visible except in read-only views, and `render()` sets its label from the active tab. It replaced the old empty-state-only button, so the empty state now has text only. The Today card is **two-track**: one ring for habits due today, one for quits still clean today, each rendered only if that track has anything to show.
@@ -238,9 +241,10 @@ npm run deploy     # build + deploy to Cloudflare Pages (needs CLOUDFLARE_ACCOUN
 
 `npm test` runs `node --test` over `test/` (no dependencies, no DB, no network). It covers the **pure logic only**: date arithmetic, the shared habit-creation rules, `stats()`/`streakStats()`, the demo sandbox, and the shared list markup in `render.js` (read-only vs writable, the backfill window, rest days, escaping). Endpoints, SSR pages and the DOM are not covered and are still verified by hand.
 
-Fixtures are built relative to `compute.js`'s own `TODAY`, so the suite is deterministic on any day and in any timezone. Three suites are worth keeping alive as the app changes:
+Fixtures are built relative to `compute.js`'s own `TODAY`, so the suite is deterministic on any day and in any timezone. Four suites are worth keeping alive as the app changes:
 
 - **The kind-inversion invariant** (`compute.test.js`) asserts that the *same* `days` array reads as 3 days done for a `normal` habit and 3 slips for a `streak`. That inversion is the one bug in this codebase that produces plausible-looking wrong numbers instead of an error.
+- **`quitAggregate` inversion** (`compute.test.js`) pins the Overview's Quits cards: a slip must cost a clean day rather than add one, `longest` is not capped by the 12-month window, and clean/slips are.
 - **Export inversion** (`compute.test.js`, `buildExportRecords`) is the same invariant at the file boundary: one check-in date exports as `done` for a habit and `slipped` for a quit, an unmarked quit day is `clean` rather than `missed`, and a quit's backdated `start_date` is not truncated to its created day. The export is where a wrong reading leaves the app and lands in someone's spreadsheet.
 - **`demoApi` create parity** (`demo.test.js`) derives what `POST /api/habits` would return straight from `normalizeSchedule`/`resolveStartDate`/`scheduledDays` and requires the sandbox to agree across 12 input shapes. The rules are shared now, but this is what catches it if someone re-inlines them.
 

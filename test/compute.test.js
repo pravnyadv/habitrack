@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
   TODAY, DAILY, iso, pad2, addDays, dow, schedOf,
   normalizeSchedule, resolveStartDate, scheduledDays,
-  activeFromOf, isStreak, startOf, stats, streakStats,
+  activeFromOf, isStreak, startOf, stats, streakStats, quitAggregate, windowStart,
   buildExportRecords, toCSV,
   escapeHtml, timeAgo,
 } from '../src/lib/compute.js';
@@ -240,6 +240,47 @@ describe('the normal/streak inversion invariant', () => {
     assert.equal(isStreak({ kind: 'streak' }), true);
     assert.equal(isStreak({ kind: 'normal' }), false);
     assert.equal(isStreak({}), false);
+  });
+});
+
+describe('quitAggregate() for the Overview Quits cards', () => {
+  const quit = (over = {}) => habit({ kind: 'streak', start_date: addDays(TODAY, -10), days: [], ...over });
+
+  test('sums clean days and slips across every quit', () => {
+    const a = quitAggregate([quit({ days: back(3) }), quit({ days: [] })]);
+    assert.equal(a.slips, 1);
+    assert.equal(a.clean, 21, '11 days each, minus the one slip');
+  });
+
+  test('a slip is a slip, never a clean day', () => {
+    // The inversion again: `days` holds slips, so counting them as clean would
+    // make a quit look better the more it was broken.
+    const none = quitAggregate([quit({ days: [] })]);
+    const one = quitAggregate([quit({ days: back(2) })]);
+    assert.equal(one.clean, none.clean - 1, 'a slip must cost a clean day');
+    assert.equal(one.slips, 1);
+  });
+
+  test('longest is the best run across quits, and is not capped by the window', () => {
+    // Deliberately all-time: someone three years clean should see 1096, not 365.
+    const a = quitAggregate([
+      quit({ start_date: addDays(TODAY, -5) }),
+      quit({ start_date: addDays(TODAY, -400) }),
+    ]);
+    assert.equal(a.longest, 401);
+  });
+
+  test('clean days and slips ARE windowed, so they match the heatmap below them', () => {
+    // The heatmap counts from windowStart(); the cards must agree or the section
+    // contradicts itself.
+    const a = quitAggregate([quit({ start_date: addDays(TODAY, -400), days: [addDays(TODAY, -390)] })]);
+    const span = Math.round((new Date(TODAY) - new Date(windowStart())) / 86400000) + 1;
+    assert.equal(a.clean, span, 'every windowed day is clean');
+    assert.equal(a.slips, 0, 'the slip predates the window');
+  });
+
+  test('no quits is a zero aggregate, not a crash', () => {
+    assert.deepEqual(quitAggregate([]), { clean: 0, slips: 0, longest: 0 });
   });
 });
 

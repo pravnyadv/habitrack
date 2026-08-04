@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import {
-  TODAY, iso, addDays, schedOf, stats, windowStart, activeFromOf,
-  heatmapBlock, githubGraph, buildExportRecords, toCSV, toJSON, downloadFile, connectRealtime, apiFetch,
+  TODAY, iso, addDays, schedOf, stats, windowStart, activeFromOf, isStreak,
+  heatmapBlock, githubGraph, streakGraph, quitAggregate,
+  buildExportRecords, toCSV, toJSON, downloadFile, connectRealtime, apiFetch,
 } from '../lib/compute.js';
 import { loadDemo } from '../lib/demo.js';
 
@@ -17,10 +18,15 @@ export default function Overview({ initialHabits = [], profileId, mode = 'app' }
   const demo = mode === 'demo';
   const [habits, setHabits] = useState(initialHabits);
   const [filter, setFilter] = useState('all');
+  // The Quits section has no "all" aggregate, so one quit is always selected;
+  // null means "the first one", resolved at render since `quits` derives from
+  // state that arrives after mount.
+  const [qFilter, setQFilter] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [viewing, setViewing] = useState(null); // resolved client-side (localStorage)
 
   const heatRef = useRef(null);
+  const quitHeatRef = useRef(null);
 
   async function load(viewId) {
     // The demo has no API to call. An untouched sandbox is simply absent, and the
@@ -70,9 +76,11 @@ export default function Overview({ initialHabits = [], profileId, mode = 'app' }
     };
   }, []);
 
-  // Streak (quit/abstain) habits store slip days, not completions, so they'd skew
-  // "avg completion". The Overview is about normal habits only.
-  const norm = habits.filter((h) => h.kind !== 'streak');
+  // The two kinds get their own section each. A checkins row means done for a
+  // habit and slipped for a quit, so no card can average them together: mixing
+  // them would put slip days into "avg completion" and invert it.
+  const norm = habits.filter((h) => !isStreak(h));
+  const quits = habits.filter(isStreak);
 
   const agg = useMemo(() => {
     if (!norm.length) return null;
@@ -122,6 +130,14 @@ export default function Overview({ initialHabits = [], profileId, mode = 'app' }
     return { avg, perfect, longest, heat };
   }, [habits, filter]);
 
+  // The selected quit, falling back to the first: qFilter starts null because
+  // `quits` is empty until the habits arrive.
+  const quit = quits.find((h) => h.id === qFilter) || quits[0] || null;
+
+  const qagg = useMemo(() => (
+    quits.length ? { ...quitAggregate(quits), heat: quit ? streakGraph(quit) : '' } : null
+  ), [habits, quit]);
+
   // Preact does not reliably re-apply `dangerouslySetInnerHTML` after hydration
   // when the string is unchanged between renders, so the SSR graph could stay
   // stale/empty even though `agg.heat` is correct. Set it imperatively so the
@@ -129,6 +145,10 @@ export default function Overview({ initialHabits = [], profileId, mode = 'app' }
   useEffect(() => {
     if (heatRef.current && agg) heatRef.current.innerHTML = agg.heat;
   }, [agg]);
+
+  useEffect(() => {
+    if (quitHeatRef.current && qagg) quitHeatRef.current.innerHTML = qagg.heat;
+  }, [qagg]);
 
   function exportRecords(kind) {
     setMenuOpen(false);
@@ -161,22 +181,45 @@ export default function Overview({ initialHabits = [], profileId, mode = 'app' }
         )}
       </div>
 
-      {!norm.length ? (
+      {!habits.length ? (
         <p class="py-16 text-center text-sm text-slate-400 dark:text-slate-500">No habits yet — add some to see your overview.</p>
       ) : (
         <>
-          <div class="grid grid-cols-3 gap-2">
-            <Card label="Avg completion" val={agg.avg + '%'} />
-            <Card label="Perfect days" val={agg.perfect} />
-            <Card label="Longest streak" val={agg.longest} />
-          </div>
-          <div class="mt-6 flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
-            <Chip active={filter === 'all'} onClick={() => setFilter('all')}>All habits</Chip>
-            {norm.map((h) => (
-              <Chip key={h.id} active={filter === h.id} onClick={() => setFilter(h.id)}>{h.emoji} {h.name}</Chip>
-            ))}
-          </div>
-          <div ref={heatRef} class="mt-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 dark:bg-slate-900 dark:ring-white/10" dangerouslySetInnerHTML={{ __html: agg.heat }} />
+          {norm.length > 0 && (
+            <>
+              <div class="grid grid-cols-3 gap-2">
+                <Card label="Avg completion" val={agg.avg + '%'} />
+                <Card label="Perfect days" val={agg.perfect} />
+                <Card label="Longest streak" val={agg.longest} />
+              </div>
+              <div class="mt-6 flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                <Chip active={filter === 'all'} onClick={() => setFilter('all')}>All habits</Chip>
+                {norm.map((h) => (
+                  <Chip key={h.id} active={filter === h.id} onClick={() => setFilter(h.id)}>{h.emoji} {h.name}</Chip>
+                ))}
+              </div>
+              <div ref={heatRef} class="mt-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 dark:bg-slate-900 dark:ring-white/10" dangerouslySetInnerHTML={{ __html: agg.heat }} />
+            </>
+          )}
+
+          {/* Quits get their own cards and their own chips: a clean day is not a
+              completion, so nothing here can share a number with the block above. */}
+          {quits.length > 0 && (
+            <div class={norm.length > 0 ? 'mt-8' : ''}>
+              <p class="mb-3 text-sm font-semibold text-slate-500 dark:text-slate-400">Quits</p>
+              <div class="grid grid-cols-3 gap-2">
+                <Card label="Clean days" val={qagg.clean} />
+                <Card label="Longest" val={qagg.longest} />
+                <Card label="Slips" val={qagg.slips} />
+              </div>
+              <div class="mt-6 flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                {quits.map((h) => (
+                  <Chip key={h.id} active={quit && quit.id === h.id} onClick={() => setQFilter(h.id)}>{h.emoji} {h.name}</Chip>
+                ))}
+              </div>
+              <div ref={quitHeatRef} class="mt-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 dark:bg-slate-900 dark:ring-white/10" dangerouslySetInnerHTML={{ __html: qagg.heat }} />
+            </div>
+          )}
         </>
       )}
     </div>
