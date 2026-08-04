@@ -155,16 +155,22 @@ export function stats(habit, today = TODAY) {
 export const BACKFILL_DAYS = 7;
 
 // ---- rolling-12-month heatmap --------------------------------------------
-export function windowStart() {
-  const t = new Date(TODAY + 'T00:00:00');
+// Every helper below takes `today` for the reason startOf/stats/streakStats do:
+// on the Workers runtime `Date.now()` is pinned to 0 while the module's top level
+// is evaluated, so the module-level TODAY is 1970-01-01 server-side. Closing over
+// it made every SSR'd heatmap render 1969 and every `d <= TODAY` filter drop the
+// whole year, so the Overview server-rendered as zeros until the client took over.
+// Pass the request's date (todayInZone) from any SSR path.
+export function windowStart(today = TODAY) {
+  const t = new Date(today + 'T00:00:00');
   return iso(new Date(t.getFullYear(), t.getMonth() - 11, 1));
 }
 
-export function heatmapBlock({ earliest, dayInfo, legend, countText }) {
+export function heatmapBlock({ earliest, dayInfo, legend, countText, today = TODAY }) {
   const startBase = new Date(earliest + 'T00:00:00');
   const gridStart = addDays(earliest, -startBase.getDay());
-  const t = new Date(TODAY + 'T00:00:00');
-  const gridEnd = addDays(TODAY, 6 - t.getDay());
+  const t = new Date(today + 'T00:00:00');
+  const gridEnd = addDays(today, 6 - t.getDay());
   const total = Math.round((new Date(gridEnd + 'T00:00:00') - new Date(gridStart + 'T00:00:00')) / 86400000) + 1;
   const weeks = total / 7;
 
@@ -182,7 +188,7 @@ export function heatmapBlock({ earliest, dayInfo, legend, countText }) {
   let cells = '';
   for (let i = 0; i < total; i++) {
     const ds = addDays(gridStart, i);
-    if (ds < earliest || ds > TODAY) { cells += '<span class="aspect-square rounded-[2px] opacity-0"></span>'; continue; }
+    if (ds < earliest || ds > today) { cells += '<span class="aspect-square rounded-[2px] opacity-0"></span>'; continue; }
     const info = dayInfo(ds) || {};
     cells += `<span class="aspect-square rounded-[2px] ${info.cls || ''}" style="${info.style || ''}" title="${info.title || ''}"></span>`;
   }
@@ -200,12 +206,12 @@ export function heatmapBlock({ earliest, dayInfo, legend, countText }) {
 }
 
 // per-habit heatmap: binary done / rest / missed, in the habit's own color
-export function githubGraph(habit) {
+export function githubGraph(habit, today = TODAY) {
   const set = new Set(habit.days);
   const sched = schedOf(habit);
   const color = COLORS[habit.color] || COLORS.emerald;
-  const earliest = windowStart();
-  const count = habit.days.filter((d) => d >= earliest && d <= TODAY).length;
+  const earliest = windowStart(today);
+  const count = habit.days.filter((d) => d >= earliest && d <= today).length;
   const dayInfo = (ds) => {
     if (set.has(ds)) return { style: `background:${color}`, title: ds + ' · done' };
     if (!sched.has(new Date(ds + 'T00:00:00').getDay())) return { cls: 'bg-slate-100/70 dark:bg-slate-800/40', title: ds + ' · rest day' };
@@ -217,21 +223,21 @@ export function githubGraph(habit) {
       <span class="h-[10px] w-[10px] rounded-[2px]" style="background:${color}"></span>
       <span>Done</span>
     </div>`;
-  return `<div>${heatmapBlock({ earliest, dayInfo, legend, countText: `${count} check-in${count === 1 ? '' : 's'} in the last year` })}</div>`;
+  return `<div>${heatmapBlock({ earliest, dayInfo, legend, today, countText: `${count} check-in${count === 1 ? '' : 's'} in the last year` })}</div>`;
 }
 
 // streak-habit heatmap: clean (habit color) vs slip (red), from the start date.
 export const SLIP_COLOR = '#ef4444';
-export function streakGraph(habit) {
+export function streakGraph(habit, today = TODAY) {
   const slips = new Set(habit.days);
   const color = COLORS[habit.color] || COLORS.emerald;
-  const start = startOf(habit);
+  const start = startOf(habit, today);
   // Always span the full year window so the grid keeps ~52 columns (a short
   // range would blow each cell up to full width). Days before the streak began
   // render as a faint "not tracked" tile.
-  const earliest = windowStart();
+  const earliest = windowStart(today);
   let total = 0, slip = 0;
-  for (let d = start > earliest ? start : earliest; d <= TODAY; d = addDays(d, 1)) { total++; if (slips.has(d)) slip++; }
+  for (let d = start > earliest ? start : earliest; d <= today; d = addDays(d, 1)) { total++; if (slips.has(d)) slip++; }
   const clean = total - slip;
   const dayInfo = (ds) => {
     if (ds < start) return { cls: 'bg-slate-100/70 dark:bg-slate-800/40', title: ds + ' · before start' };
@@ -244,7 +250,7 @@ export function streakGraph(habit) {
       <span class="ml-1.5 h-[10px] w-[10px] rounded-[2px]" style="background:${SLIP_COLOR}"></span>
       <span>Slip</span>
     </div>`;
-  return `<div>${heatmapBlock({ earliest, dayInfo, legend, countText: `${clean} clean day${clean === 1 ? '' : 's'} in the last year` })}</div>`;
+  return `<div>${heatmapBlock({ earliest, dayInfo, legend, today, countText: `${clean} clean day${clean === 1 ? '' : 's'} in the last year` })}</div>`;
 }
 
 // 12-month totals across every quit, for the Overview's Quits cards. Clean days
@@ -253,7 +259,7 @@ export function streakGraph(habit) {
 // multi-year clean run at 365 would understate the one number a quit tracker
 // exists to show, and the habits row's "Longest streak" is all-time too.
 export function quitAggregate(quits, today = TODAY) {
-  const earliest = windowStart();
+  const earliest = windowStart(today);
   let clean = 0, slips = 0, longest = 0;
   for (const h of quits) {
     const slipDays = new Set(h.days);
