@@ -11,11 +11,19 @@ const VIEW = 'habitrack_viewing';
 const AGG_LEVELS = ['#6ee7b7', '#34d399', '#10b981', '#047857'];
 
 // props: initialHabits (SSR'd own habits), profileId (own id, for the realtime channel),
-//        mode ('app' | 'demo'). In demo mode there is no session and no server-side
-//        profile: the data is the visitor's localStorage sandbox, so that is what gets
-//        read, and there is nothing to authenticate against or subscribe to.
-export default function Overview({ initialHabits = [], profileId, mode = 'app' }) {
+//        mode ('app' | 'demo'), today (the request's local date; SSR only).
+//        In demo mode there is no session and no server-side profile: the data is the
+//        visitor's localStorage sandbox, so that is what gets read, and there is
+//        nothing to authenticate against or subscribe to.
+//
+// Every page rendering this island must pass `today`. compute.js's module-level TODAY
+// is 1970-01-01 on the Workers runtime, because Date.now() is pinned to 0 while a
+// module's top level is evaluated, so closing over it made the server render an empty
+// 1969 heatmap and a zero in every card. The browser's TODAY is correct, so it takes
+// over on mount (below), which is also the fallback if a page forgets the prop.
+export default function Overview({ initialHabits = [], profileId, mode = 'app', today: ssrToday }) {
   const demo = mode === 'demo';
+  const [today, setToday] = useState(ssrToday || TODAY);
   const [habits, setHabits] = useState(initialHabits);
   const [filter, setFilter] = useState('all');
   // The Quits section has no "all" aggregate, so one quit is always selected;
@@ -44,6 +52,9 @@ export default function Overview({ initialHabits = [], profileId, mode = 'app' }
     // Share-preview is a signed-in concept; the demo can never be viewing anyone.
     if (!demo) { try { v = JSON.parse(localStorage.getItem(VIEW) || 'null'); } catch {} }
     setViewing(v);
+    // Client TODAY is the browser's real date, so it wins over the SSR'd prop (which
+    // is only geo-IP accurate). Same value in the normal case, so no visible change.
+    setToday(TODAY);
     const dataId = v ? v.id : profileId;
     // Always read fresh on mount. The SSR snapshot can be stale on a long-lived
     // PWA (which keeps the page in memory for days), and in the demo it is the
@@ -95,18 +106,18 @@ export default function Overview({ initialHabits = [], profileId, mode = 'app' }
       }
       return { sc, dn };
     };
-    const earliest = windowStart();
+    const earliest = windowStart(today);
     let sumPct = 0, daysWithSched = 0, perfect = 0;
-    for (let d = earliest; d <= TODAY; d = addDays(d, 1)) {
+    for (let d = earliest; d <= today; d = addDays(d, 1)) {
       const { sc, dn } = dayTally(d);
       if (sc > 0) { sumPct += dn / sc; daysWithSched++; if (dn === sc) perfect++; }
     }
     const avg = daysWithSched ? Math.round((sumPct / daysWithSched) * 100) : 0;
-    const longest = Math.max(0, ...norm.map((h) => stats(h).longest));
+    const longest = Math.max(0, ...norm.map((h) => stats(h, today).longest));
 
     let heat;
     if (filter === 'all') {
-      const total = norm.reduce((n, h) => n + h.days.filter((d) => d >= earliest && d <= TODAY).length, 0);
+      const total = norm.reduce((n, h) => n + h.days.filter((d) => d >= earliest && d <= today).length, 0);
       const dayInfo = (ds) => {
         const { sc, dn } = dayTally(ds);
         if (sc === 0) return { cls: 'bg-slate-100/70 dark:bg-slate-800/40', title: ds + ' · no habits' };
@@ -122,21 +133,21 @@ export default function Overview({ initialHabits = [], profileId, mode = 'app' }
           ${AGG_LEVELS.map((c) => `<span class="h-[10px] w-[10px] rounded-[2px]" style="background:${c}"></span>`).join('')}
           <span class="ml-0.5">More</span>
         </div>`;
-      heat = heatmapBlock({ earliest, dayInfo, legend, countText: `${total} check-in${total === 1 ? '' : 's'} in the last year` });
+      heat = heatmapBlock({ earliest, dayInfo, legend, today, countText: `${total} check-in${total === 1 ? '' : 's'} in the last year` });
     } else {
       const h = norm.find((x) => x.id === filter);
-      heat = h ? githubGraph(h) : '';
+      heat = h ? githubGraph(h, today) : '';
     }
     return { avg, perfect, longest, heat };
-  }, [habits, filter]);
+  }, [habits, filter, today]);
 
   // The selected quit, falling back to the first: qFilter starts null because
   // `quits` is empty until the habits arrive.
   const quit = quits.find((h) => h.id === qFilter) || quits[0] || null;
 
   const qagg = useMemo(() => (
-    quits.length ? { ...quitAggregate(quits), heat: quit ? streakGraph(quit) : '' } : null
-  ), [habits, quit]);
+    quits.length ? { ...quitAggregate(quits, today), heat: quit ? streakGraph(quit, today) : '' } : null
+  ), [habits, quit, today]);
 
   // Preact does not reliably re-apply `dangerouslySetInnerHTML` after hydration
   // when the string is unchanged between renders, so the SSR graph could stay
@@ -155,9 +166,9 @@ export default function Overview({ initialHabits = [], profileId, mode = 'app' }
     // Every habit, not `norm`: the stats above exclude quits because slip days
     // would skew them, but an export that drops half your data is just wrong.
     // buildExportRecords labels each kind in its own vocabulary.
-    const records = buildExportRecords(habits);
-    if (kind === 'csv') downloadFile(`habitrack-export-${TODAY}.csv`, toCSV(records), 'text/csv;charset=utf-8');
-    else downloadFile(`habitrack-export-${TODAY}.json`, toJSON(records), 'application/json');
+    const records = buildExportRecords(habits, today);
+    if (kind === 'csv') downloadFile(`habitrack-export-${today}.csv`, toCSV(records), 'text/csv;charset=utf-8');
+    else downloadFile(`habitrack-export-${today}.json`, toJSON(records), 'application/json');
   }
 
   return (

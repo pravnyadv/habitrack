@@ -2,6 +2,8 @@
 import ProfileLayout from '../../../layouts/ProfileLayout.astro';
 import Overview from '../../../components/Overview.jsx';
 import { demoSeed } from '../../../lib/demo.js';
+import { todayInZone } from '../../../lib/render.js';
+import { iso } from '../../../lib/compute.js';
 
 // The demo's Overview, so a visitor with no account can still see the stats and
 // heatmap screen. Same island as the signed-in /profile tab; the difference is
@@ -11,8 +13,13 @@ import { demoSeed } from '../../../lib/demo.js';
 // it, this being an indexable surface). It is the pristine seed, though: if the
 // visitor has edited their sandbox, the island swaps in localStorage on mount.
 const seed = demoSeed();
+// The island must be told the date: compute.js's module-level TODAY is 1970-01-01 on
+// the Workers runtime (Date.now() is 0 during module evaluation), which SSR'd an empty
+// 1969 heatmap and zeros in every card. Same source as HabitApp's week strip. This
+// page is the indexable one, so a crawler would have seen the zeros too.
+const today = todayInZone(Astro.locals.runtime?.cf?.timezone) || iso(new Date());
 ---
 
 <ProfileLayout pageTitle="Demo overview — Habitrack" mode="demo">
-  <Overview client:load mode="demo" initialHabits={seed} />
+  <Overview client:load mode="demo" initialHabits={seed} today={today} />
 </ProfileLayout>

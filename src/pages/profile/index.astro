@@ -3,6 +3,8 @@ import ProfileLayout from '../../layouts/ProfileLayout.astro';
 import Overview from '../../components/Overview.jsx';
 import { getSql, listHabits, getProfile } from '../../lib/db.js';
 import { verifyToken, TOKEN_COOKIE } from '../../lib/auth.js';
+import { todayInZone } from '../../lib/render.js';
+import { iso } from '../../lib/compute.js';
 
 const env = Astro.locals.runtime?.env;
 const pid = await verifyToken(Astro.cookies.get(TOKEN_COOKIE)?.value, env);
@@ -16,8 +18,12 @@ const habits = rows.map((h) => ({
   ...h,
   created_at: h.created_at instanceof Date ? h.created_at.toISOString() : h.created_at,
 }));
+// The island must be told the date: compute.js's module-level TODAY is 1970-01-01 on
+// the Workers runtime (Date.now() is 0 during module evaluation), which SSR'd an empty
+// 1969 heatmap and zeros in every card. Same source as HabitApp's week strip.
+const today = todayInZone(Astro.locals.runtime?.cf?.timezone) || iso(new Date());
 ---
 
 <ProfileLayout heading="Profile" tab="overview" admin={!!me?.is_admin} backHref="/">
-  <Overview client:load initialHabits={habits} profileId={pid} />
+  <Overview client:load initialHabits={habits} profileId={pid} today={today} />
 </ProfileLayout>

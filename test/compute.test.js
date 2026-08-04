@@ -9,6 +9,7 @@ import {
   TODAY, DAILY, iso, pad2, addDays, dow, schedOf,
   normalizeSchedule, resolveStartDate, scheduledDays,
   activeFromOf, isStreak, startOf, stats, streakStats, quitAggregate, windowStart,
+  heatmapBlock, githubGraph, streakGraph,
   buildExportRecords, toCSV,
   escapeHtml, timeAgo,
 } from '../src/lib/compute.js';
@@ -240,6 +241,75 @@ describe('the normal/streak inversion invariant', () => {
     assert.equal(isStreak({ kind: 'streak' }), true);
     assert.equal(isStreak({ kind: 'normal' }), false);
     assert.equal(isStreak({}), false);
+  });
+});
+
+describe('the heatmap helpers honour an injected `today`', () => {
+  // On the Workers runtime Date.now() is 0 while a module's top level is evaluated,
+  // so compute.js's TODAY is 1970-01-01 server-side. Anything that closed over it
+  // rendered a 1969 grid and dropped every real day, which is exactly what the
+  // Overview did before these took a `today`. Passing the epoch here reproduces the
+  // server's view: if a helper ignores the argument the assertion flips.
+  const EPOCH = '1970-01-01';
+  // Read the count out of the caption as a NUMBER. Matching /0 clean days/ as a regex
+  // is useless here: it also matches "10 clean days".
+  const caption = (html) => Number(html.match(/>(\d+) (?:check-ins?|clean days?) in the last year/)[1]);
+  // Column count, which is what actually reveals a grid built to the wrong end date.
+  // Cells past `today` are emitted title-less, so inspecting titles cannot see it.
+  const weeks = (html) => Number(html.match(/repeat\((\d+),minmax/)[1]);
+
+  test('windowStart is derived from the given day, not module TODAY', () => {
+    assert.equal(windowStart(EPOCH), '1969-02-01');
+    assert.notEqual(windowStart(EPOCH), windowStart());
+  });
+
+  test('githubGraph counts against the given day', () => {
+    // Real check-ins are decades after the epoch, so they fall outside its window.
+    const h = habit({ days: back(1, 2, 3) });
+    assert.equal(caption(githubGraph(h, EPOCH)), 0);
+    assert.equal(caption(githubGraph(h)), 3);
+  });
+
+  test('streakGraph counts against the given day', () => {
+    const q = habit({ kind: 'streak', start_date: addDays(TODAY, -9), days: [] });
+    assert.equal(caption(streakGraph(q, EPOCH)), 0, 'the streak starts long after the epoch');
+    assert.equal(caption(streakGraph(q)), 10);
+  });
+
+  test('heatmapBlock sizes its grid to the given day', () => {
+    // 1969-02-01 to the epoch is a year, so ~49 columns. Building to module TODAY
+    // instead spans five decades and thousands of columns.
+    const html = heatmapBlock({ earliest: '1969-02-01', dayInfo: (ds) => ({ title: ds }), legend: '', today: EPOCH });
+    const w = weeks(html);
+    assert.ok(w > 45 && w < 60, `expected ~49 week columns, got ${w}`);
+  });
+
+  test('heatmapBlock blanks every cell after the given day', () => {
+    // The grid always fills whole weeks, so it overshoots `today`; the overshoot must
+    // stay title-less or the SSR'd graph claims days that have not happened.
+    const html = heatmapBlock({ earliest: '1969-02-01', dayInfo: (ds) => ({ title: ds }), legend: '', today: EPOCH });
+    const titled = [...html.matchAll(/title="(\d{4}-\d{2}-\d{2})"/g)].map((m) => m[1]);
+    assert.equal(titled.at(-1), EPOCH, 'the last labelled cell is the given day');
+    assert.deepEqual(titled.filter((d) => d > EPOCH), [], 'no cell past the given day is labelled');
+  });
+
+  test('quitAggregate windows against the given day', () => {
+    const q = habit({ kind: 'streak', start_date: addDays(TODAY, -5), days: [] });
+    assert.equal(quitAggregate([q], EPOCH).clean, 0, 'nothing is inside the epoch window');
+    assert.equal(quitAggregate([q]).clean, 6);
+  });
+
+  test('quitAggregate takes its window lower bound from the given day', () => {
+    // The EPOCH cases above cannot see this: there, `start` is after `today` either
+    // way, so the loop is empty whichever windowStart is used. Here the quit predates
+    // both windows, so the lower bound IS windowStart(today) and reading windowStart()
+    // instead shifts it by months.
+    const past = addDays(TODAY, -200);
+    const q = habit({ kind: 'streak', start_date: addDays(TODAY, -900), days: [] });
+    let span = 0;
+    for (let d = windowStart(past); d <= past; d = addDays(d, 1)) span++;
+    assert.equal(quitAggregate([q], past).clean, span);
+    assert.notEqual(windowStart(past), windowStart(), 'fixture is pointless if the windows match');
   });
 });
 
