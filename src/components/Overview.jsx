@@ -132,7 +132,10 @@ export default function Overview({ initialHabits = [], profileId, mode = 'app' }
 
   function exportRecords(kind) {
     setMenuOpen(false);
-    const records = buildExportRecords(norm);
+    // Every habit, not `norm`: the stats above exclude quits because slip days
+    // would skew them, but an export that drops half your data is just wrong.
+    // buildExportRecords labels each kind in its own vocabulary.
+    const records = buildExportRecords(habits);
     if (kind === 'csv') downloadFile(`habitrack-export-${TODAY}.csv`, toCSV(records), 'text/csv;charset=utf-8');
     else downloadFile(`habitrack-export-${TODAY}.json`, toJSON(records), 'application/json');
   }
@@ -141,7 +144,7 @@ export default function Overview({ initialHabits = [], profileId, mode = 'app' }
     <div>
       <div class="mb-4 flex items-center justify-between">
         <p class="text-sm text-slate-400">{viewing ? 'Last 12 months' : 'Your last 12 months'}</p>
-        {!viewing && norm.length > 0 && (
+        {!viewing && habits.length > 0 && (
           <div class="relative">
             <button aria-label="Export data" title="Export"
               class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:text-white"
